@@ -36,10 +36,10 @@ const CONFIG = {
    */
   songs: [
     // Sorted alphabetically by title
-    { id: 'idontloveyou', title: 'I Don\'t Love You', artist: 'My Chemical Romance', url: '/songs/My%20Chemical%20Romance%20-%20I%20Don%27t%20Love%20You.mp3' },
-    { id: 'dontlookbackinanger', title: 'Don\'t Look Back In Anger', artist: 'Oasis', url: '/songs/Oasis%20-%20Don%27t%20Look%20Back%20In%20Anger.mp3' },
-    { id: 'masterofpuppets', title: 'Master of Puppets', artist: 'Metallica', url: '/songs/Metallica%20-%20Master%20of%20Puppets.mp3' },
-    { id: 'sofaraway', title: 'So Far Away', artist: 'Avenged Sevenfold', url: '/songs/Avenged%20Sevenfold%20-%20So%20Far%20Away.mp3' },
+    { id: 'idontloveyou', title: 'I Don\'t Love You', artist: 'My Chemical Romance', url: '/cyber-runner/songs/My%20Chemical%20Romance%20-%20I%20Don%27t%20Love%20You.mp3' },
+    { id: 'dontlookbackinanger', title: 'Don\'t Look Back In Anger', artist: 'Oasis', url: '/cyber-runner/songs/Oasis%20-%20Don%27t%20Look%20Back%20In%20Anger.mp3' },
+    { id: 'masterofpuppets', title: 'Master of Puppets', artist: 'Metallica', url: '/cyber-runner/songs/Metallica%20-%20Master%20of%20Puppets.mp3' },
+    { id: 'sofaraway', title: 'So Far Away', artist: 'Avenged Sevenfold', url: '/cyber-runner/songs/Avenged%20Sevenfold%20-%20So%20Far%20Away.mp3' },
   ],
 
   // Upload limits for user-picked MP3s. Decoding a very large file blocks the
