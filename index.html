@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CYBER RUNNER // 212 BPM</title>
+  </head>
+  <body>
+    <!-- WebGL canvas is injected here at runtime -->
+    <div id="app"></div>
+
+    <!-- Pure DOM overlay: nothing here is drawn inside the WebGL canvas -->
+    <div id="ui">
+      <header id="hud" class="hidden">
+        <div class="hud-block">
+          <span class="hud-label">SCORE</span>
+          <span id="score" class="hud-value">0</span>
+        </div>
+        <div class="hud-block hud-block--warn">
+          <span class="hud-label">MISSES</span>
+          <span id="misses" class="hud-value">0 / 10</span>
+        </div>
+        <div class="hud-spacer"></div>
+        <div class="hud-block hud-block--right">
+          <span class="hud-label">COMBO</span>
+          <span id="combo" class="hud-value">0</span>
+        </div>
+        <div class="hud-block hud-block--right">
+          <span class="hud-label">BEAT</span>
+          <span id="beat" class="hud-value">--</span>
+        </div>
+      </header>
+
+      <!-- Lane key indicators, mirrored against the 3D lanes below -->
+      <div id="lane-keys" class="hidden">
+        <div class="lane-key" data-lane="0"><span>1</span></div>
+        <div class="lane-key" data-lane="1"><span>2</span></div>
+        <div class="lane-key" data-lane="2"><span>3</span></div>
+        <div class="lane-key" data-lane="3"><span>4</span></div>
+      </div>
+
+      <!-- Judgement popup: PERFECT / GOOD / OK / BAD / MISS -->
+      <div id="judgement" aria-live="polite">
+        <span id="judgement-text"></span>
+        <span id="judgement-detail"></span>
+      </div>
+
+      <!-- 3 - 2 - 1 countdown before the music starts -->
+      <div id="countdown" class="hidden" aria-live="assertive">
+        <span id="countdown-text"></span>
+      </div>
+
+      <!-- Pause toggle button (top-right, below the HUD) -->
+      <button id="pause-btn" type="button" class="hidden" title="Pause (Esc)">PAUSE</button>
+
+      <!-- Pause overlay -->
+      <div id="pause-screen" class="hidden">
+        <h2 class="pause-title">PAUSED</h2>
+        <p class="pause-hint">PRESS <kbd>ESC</kbd> OR CLICK RESUME</p>
+        <div class="pause-buttons">
+          <button id="resume-btn" type="button">RESUME</button>
+          <button id="quit-btn" type="button" class="btn-ghost">RESTART</button>
+          <button id="menu-btn" type="button" class="btn-ghost">MAIN MENU</button>
+        </div>
+      </div>
+
+      <div id="start-screen">
+        <h1 class="title" data-text="CYBER RUNNER">CYBER RUNNER</h1>
+        <p class="subtitle">HIT EVERY NOTE ON THE LINE</p>
+
+        <!-- Song picker: bundled catalogue + upload your own MP3 -->
+        <div id="song-picker">
+          <div class="song-row">
+            <select id="song-select" aria-label="Choose a song"></select>
+            <button id="preview-btn" type="button" class="btn-small">LISTEN</button>
+          </div>
+          <p id="song-info" class="song-info"></p>
+
+          <div class="song-row">
+            <label for="song-upload" class="btn-small btn-upload">UPLOAD MP3</label>
+            <input id="song-upload" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav" hidden />
+            <button id="song-remove-btn" type="button" class="btn-small btn-ghost hidden">REMOVE</button>
+          </div>
+          <p id="song-status" class="song-status" data-kind="info"></p>
+        </div>
+
+        <button id="start-btn" type="button">START GAME</button>
+
+        <div class="key-guide">
+          <div class="key-guide-row">
+            <kbd class="k-lane-0">1</kbd>
+            <kbd class="k-lane-1">2</kbd>
+            <kbd class="k-lane-2">3</kbd>
+            <kbd class="k-lane-3">4</kbd>
+          </div>
+          <p class="controls">PRESS THE KEY WHEN A NOTE REACHES THE LINE</p>
+        </div>
+
+        <p class="controls controls--dim">MISS 10 NOTES AND THE RUN ENDS</p>
+      </div>
+
+      <div id="game-over" class="hidden">
+        <h2 class="over-title">SIGNAL LOST</h2>
+        <p class="over-reason">TOO MANY MISSED NOTES</p>
+        <p class="over-score">FINAL SCORE <span id="final-score">0</span></p>
+        <p class="over-score">NOTES HIT <span id="final-hits">0</span></p>
+        <button id="restart-btn" type="button">RUN AGAIN</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

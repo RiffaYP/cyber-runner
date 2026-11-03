@@ -1,0 +1,800 @@
+:root {
+  /* Lane palette — saturated but not blinding. Mirrors the 3D note colours. */
+  --lane-0: #2fd8ff;
+  --lane-1: #4dff9e;
+  --lane-2: #ffc443;
+  --lane-3: #ff5c9d;
+
+  --ink: #dff6ff;
+  --ink-dim: rgba(223, 246, 255, 0.55);
+  --ink-faint: rgba(223, 246, 255, 0.28);
+  --bg: #05070d;
+  --panel: rgba(10, 16, 28, 0.72);
+
+  --font: 'Courier New', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Canvas layer ---------- */
+#app {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+#app canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------- DOM overlay layer ---------- */
+#ui {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none; /* let clicks fall through to the canvas */
+  user-select: none;
+}
+
+#ui button {
+  pointer-events: auto; /* re-enable clicks on interactive elements */
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ==========================================================================
+   HUD
+   ========================================================================== */
+
+#hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(1rem, 2.5vw, 2.2rem);
+  padding: clamp(0.9rem, 2vw, 1.5rem) clamp(1rem, 3vw, 2.2rem);
+}
+
+.hud-spacer {
+  flex: 1;
+}
+
+.hud-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 4.5rem;
+}
+
+.hud-block--right {
+  align-items: flex-end;
+}
+
+.hud-label {
+  font-size: clamp(0.5rem, 0.85vw, 0.62rem);
+  letter-spacing: 0.28em;
+  color: var(--ink-faint);
+}
+
+.hud-value {
+  font-size: clamp(1.05rem, 2vw, 1.5rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  /* Much softer than before — a whisper of glow, not a flare. */
+  text-shadow: 0 0 12px rgba(120, 220, 255, 0.35);
+  transition: color 0.25s ease;
+}
+
+#score.hud-pop {
+  color: #fff;
+  text-shadow: 0 0 18px rgba(255, 255, 255, 0.85);
+}
+
+.hud-block--warn .hud-value {
+  color: #ff8fb0;
+  text-shadow: 0 0 12px rgba(255, 92, 157, 0.3);
+}
+
+.hud-block--warn .hud-value.danger {
+  color: #ff4d6d;
+}
+
+#combo.hud-value {
+  color: #ffe9a3;
+  text-shadow: 0 0 12px rgba(255, 196, 67, 0.32);
+}
+
+#beat.hud-value {
+  color: var(--lane-0);
+  text-shadow: 0 0 12px rgba(47, 216, 255, 0.32);
+}
+
+/* ==========================================================================
+   LANE KEYS (Guitar Hero style key strip)
+   ========================================================================== */
+
+#lane-keys {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: clamp(1.1rem, 3vh, 2.4rem);
+  display: flex;
+  justify-content: center;
+  gap: clamp(0.55rem, 1.6vw, 1.15rem);
+  padding: 0 1rem;
+}
+
+.lane-key {
+  width: clamp(2.6rem, 6.2vw, 4.2rem);
+  height: clamp(2.1rem, 4.4vw, 3rem);
+  display: grid;
+  place-items: center;
+  border-radius: 0.55rem;
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: clamp(0.8rem, 1.5vw, 1.05rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+  transition:
+    background 0.09s ease,
+    border-color 0.09s ease,
+    color 0.09s ease,
+    transform 0.09s ease,
+    box-shadow 0.09s ease;
+}
+
+/* Per-lane accent tint (matches the 3D lane colour) */
+.lane-key[data-lane='0'] {
+  --accent: var(--lane-0);
+}
+.lane-key[data-lane='1'] {
+  --accent: var(--lane-1);
+}
+.lane-key[data-lane='2'] {
+  --accent: var(--lane-2);
+}
+.lane-key[data-lane='3'] {
+  --accent: var(--lane-3);
+}
+
+.lane-key[data-lane] {
+  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: color-mix(in srgb, var(--accent) 78%, white);
+}
+
+/* Held / pressed state */
+.lane-key.active {
+  transform: translateY(2px) scale(0.97);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow:
+    0 0 14px color-mix(in srgb, var(--accent) 45%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* A perfectly timed hit flashes the key white briefly */
+.lane-key.hit {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #fff;
+  color: #06121a;
+  box-shadow: 0 0 22px rgba(255, 255, 255, 0.75);
+}
+
+/* An "OK" hit flashes a warm amber (softer than a full hit) */
+.lane-key.ok {
+  background: color-mix(in srgb, var(--lane-2) 55%, transparent);
+  border-color: var(--lane-2);
+  color: #fff;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--lane-2) 45%, transparent);
+}
+
+/* A dropped note flashes the key red */
+.lane-key.miss {
+  animation: key-miss 0.32s ease-out;
+}
+
+@keyframes key-miss {
+  0% {
+    background: rgba(255, 77, 109, 0.55);
+    border-color: #ff4d6d;
+  }
+  100% {
+    background: rgba(255, 255, 255, 0.035);
+    border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  }
+}
+
+/* ==========================================================================
+   START SCREEN
+   ========================================================================== */
+
+#start-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.05rem;
+  text-align: center;
+  padding: 2rem;
+  background: radial-gradient(
+    ellipse at 50% 55%,
+    rgba(18, 30, 48, 0.55) 0%,
+    rgba(5, 7, 13, 0.93) 68%
+  );
+}
+
+.title {
+  position: relative;
+  font-size: clamp(1.9rem, 6vw, 4.4rem);
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: #f4fbff;
+  /* Layered but restrained — readable, still neon. */
+  text-shadow:
+    0 0 18px rgba(47, 216, 255, 0.45),
+    0 0 46px rgba(47, 216, 255, 0.16);
+}
+
+.title::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  color: var(--lane-3);
+  opacity: 0.5;
+  clip-path: inset(46% 0 34% 0);
+  transform: translateX(3px);
+  mix-blend-mode: screen;
+  animation: glitch 5.5s infinite steps(1);
+}
+
+.subtitle {
+  font-size: clamp(0.56rem, 1.25vw, 0.78rem);
+  letter-spacing: 0.34em;
+  color: var(--ink-dim);
+  margin-bottom: 0.35rem;
+}
+
+/* ---------- Buttons ---------- */
+#ui button {
+  font-family: var(--font);
+  font-size: clamp(0.78rem, 1.4vw, 0.95rem);
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  padding: 0.85rem 2.3rem;
+  color: #eaf9ff;
+  background: rgba(47, 216, 255, 0.07);
+  border: 1.5px solid rgba(47, 216, 255, 0.55);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  box-shadow: 0 0 18px rgba(47, 216, 255, 0.12);
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.1s ease;
+}
+
+#ui button:hover,
+#ui button:focus-visible {
+  background: rgba(47, 216, 255, 0.16);
+  border-color: var(--lane-0);
+  box-shadow: 0 0 26px rgba(47, 216, 255, 0.32);
+  outline: none;
+}
+
+#ui button:active {
+  transform: scale(0.975);
+}
+
+/* ==========================================================================
+   SONG PICKER  (start screen)
+   ========================================================================== */
+
+#song-picker {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  width: min(30rem, 88vw);
+  margin: 0.35rem 0 0.6rem;
+}
+
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+#song-select {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font);
+  font-size: clamp(0.66rem, 1.25vw, 0.82rem);
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  background: rgba(12, 22, 34, 0.92);
+  border: 1.5px solid rgba(47, 216, 255, 0.35);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  /* Draw a small caret so it reads as a dropdown */
+  background-image: linear-gradient(45deg, transparent 50%, var(--lane-0) 50%),
+    linear-gradient(135deg, var(--lane-0) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) calc(50% + 1px),
+    calc(100% - 12px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 2rem;
+}
+
+#song-select:hover,
+#song-select:focus-visible {
+  border-color: var(--lane-0);
+}
+
+#song-select option {
+  background: #0b1420;
+  color: var(--ink);
+}
+
+#ui .btn-small {
+  font-size: clamp(0.52rem, 1vw, 0.64rem);
+  letter-spacing: 0.2em;
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.4rem;
+  white-space: nowrap;
+}
+
+#ui .btn-small.playing {
+  background: rgba(255, 92, 157, 0.18);
+  border-color: var(--lane-3);
+  color: #ffd7e6;
+  box-shadow: 0 0 16px rgba(255, 92, 157, 0.32);
+}
+
+#ui .btn-upload {
+  display: inline-grid;
+  place-items: center;
+  flex: 1;
+  font-family: var(--font);
+  font-weight: 700;
+  color: var(--ink-dim);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(223, 246, 255, 0.2);
+  border-radius: 0.4rem;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+#ui .btn-upload:hover {
+  background: rgba(47, 216, 255, 0.12);
+  border-color: rgba(47, 216, 255, 0.55);
+  color: var(--ink);
+}
+
+.song-info {
+  font-size: clamp(0.5rem, 0.95vw, 0.62rem);
+  letter-spacing: 0.16em;
+  color: var(--ink-faint);
+  text-align: center;
+  min-height: 1em;
+}
+
+.song-status {
+  font-size: clamp(0.5rem, 0.95vw, 0.62rem);
+  letter-spacing: 0.1em;
+  text-align: center;
+  min-height: 1em;
+  color: var(--ink-dim);
+}
+
+.song-status[data-kind='error'] {
+  color: #ff8fb0;
+}
+
+.song-status[data-kind='warn'] {
+  color: #ffd97a;
+}
+
+.song-status[data-kind='ok'] {
+  color: #8dffb9;
+}
+
+#ui button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ---------- Key guide on the start screen ---------- */
+.key-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.75rem;
+}
+
+.key-guide-row {
+  display: flex;
+  gap: clamp(0.4rem, 1.1vw, 0.7rem);
+}
+
+kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.2rem;
+  padding: 0.42em 0.55em;
+  border-radius: 0.4rem;
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  font-family: var(--font);
+  font-size: clamp(0.7rem, 1.2vw, 0.88rem);
+  font-weight: 700;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.k-lane-0 {
+  border-color: color-mix(in srgb, var(--lane-0) 55%, transparent);
+  color: var(--lane-0);
+}
+.k-lane-1 {
+  border-color: color-mix(in srgb, var(--lane-1) 55%, transparent);
+  color: var(--lane-1);
+}
+.k-lane-2 {
+  border-color: color-mix(in srgb, var(--lane-2) 55%, transparent);
+  color: var(--lane-2);
+}
+.k-lane-3 {
+  border-color: color-mix(in srgb, var(--lane-3) 55%, transparent);
+  color: var(--lane-3);
+}
+
+.controls {
+  font-size: clamp(0.54rem, 1.1vw, 0.7rem);
+  letter-spacing: 0.22em;
+  color: var(--ink-dim);
+}
+
+.controls--dim {
+  color: var(--ink-faint);
+  margin-top: 0.35rem;
+}
+
+/* ==========================================================================
+   GAME OVER
+   ========================================================================== */
+
+#game-over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  text-align: center;
+  padding: 2rem;
+  background: radial-gradient(
+    ellipse at 50% 55%,
+    rgba(40, 10, 26, 0.88) 0%,
+    rgba(5, 7, 13, 0.97) 66%
+  );
+  backdrop-filter: blur(2px);
+}
+
+.over-title {
+  font-size: clamp(1.5rem, 4.6vw, 3.1rem);
+  letter-spacing: 0.14em;
+  color: #ff7b9c;
+  text-shadow: 0 0 22px rgba(255, 92, 157, 0.35);
+}
+
+.over-reason {
+  font-size: clamp(0.54rem, 1.1vw, 0.72rem);
+  letter-spacing: 0.3em;
+  color: var(--ink-faint);
+  margin-bottom: 0.3rem;
+}
+
+.over-score {
+  font-size: clamp(0.68rem, 1.35vw, 0.86rem);
+  letter-spacing: 0.26em;
+  color: var(--ink-dim);
+}
+
+.over-score:last-of-type {
+  margin-bottom: 0.9rem;
+}
+
+#final-score,
+#final-hits {
+  font-weight: 700;
+  font-size: 1.6em;
+  color: var(--ink);
+  vertical-align: middle;
+}
+
+/* ==========================================================================
+   JUDGEMENT POPUP  (PERFECT / GOOD / OK / BAD / MISS)
+   ========================================================================== */
+
+#judgement {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+#judgement.show {
+  animation: judge-pop 0.62s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+#judgement-text {
+  font-size: clamp(1.1rem, 3vw, 2rem);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  line-height: 1;
+}
+
+#judgement-detail {
+  font-size: clamp(0.5rem, 1vw, 0.65rem);
+  letter-spacing: 0.2em;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Per-grade colours */
+#judgement[data-grade='perfect'] #judgement-text {
+  color: #8ef7ff;
+  text-shadow: 0 0 18px rgba(47, 216, 255, 0.85);
+}
+#judgement[data-grade='good'] #judgement-text {
+  color: #8dffb9;
+  text-shadow: 0 0 16px rgba(77, 255, 158, 0.7);
+}
+#judgement[data-grade='ok'] #judgement-text {
+  color: #ffd97a;
+  text-shadow: 0 0 14px rgba(255, 196, 67, 0.6);
+}
+#judgement[data-grade='bad'] #judgement-text {
+  color: #ff9a6b;
+  text-shadow: 0 0 14px rgba(255, 122, 80, 0.6);
+}
+#judgement[data-grade='miss'] #judgement-text {
+  color: #ff5c7a;
+  text-shadow: 0 0 16px rgba(255, 77, 109, 0.75);
+}
+
+@keyframes judge-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.82) translateY(6px);
+  }
+  22% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.04) translateY(0);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1) translateY(-2px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.98) translateY(-12px);
+  }
+}
+
+/* ==========================================================================
+   COUNTDOWN  (3 - 2 - 1 before the music starts)
+   ========================================================================== */
+
+#countdown {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+#countdown-text {
+  font-size: clamp(4rem, 16vw, 12rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: #f4fbff;
+  text-shadow:
+    0 0 26px rgba(47, 216, 255, 0.65),
+    0 0 70px rgba(47, 216, 255, 0.3);
+  animation: count-pop 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* The final "GO" beat is tinted to signal the music is starting. */
+#countdown-text.go {
+  font-size: clamp(2.6rem, 10vw, 7rem);
+  letter-spacing: 0.24em;
+  color: #8ef7ff;
+  text-shadow:
+    0 0 30px rgba(47, 216, 255, 0.9),
+    0 0 80px rgba(47, 216, 255, 0.45);
+}
+
+@keyframes count-pop {
+  0% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+}
+
+/* ==========================================================================
+   PAUSE
+   ========================================================================== */
+
+#pause-btn {
+  position: absolute;
+  top: clamp(0.9rem, 2vw, 1.5rem);
+  right: clamp(1rem, 3vw, 2.2rem);
+  /* Sits under the HUD blocks, offset downward */
+  top: clamp(4.2rem, 8vw, 5.4rem);
+  padding: 0.42rem 0.85rem !important;
+  font-size: clamp(0.5rem, 1vw, 0.62rem) !important;
+  letter-spacing: 0.24em !important;
+  border-radius: 0.4rem;
+  opacity: 0.55;
+  transition: opacity 0.18s ease;
+}
+
+#pause-btn:hover {
+  opacity: 1;
+}
+
+#pause-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  text-align: center;
+  padding: 2rem;
+  background: radial-gradient(
+    ellipse at 50% 55%,
+    rgba(10, 22, 34, 0.9) 0%,
+    rgba(5, 7, 13, 0.97) 66%
+  );
+  backdrop-filter: blur(3px);
+  animation: fade-in 0.2s ease-out both;
+}
+
+.pause-title {
+  font-size: clamp(1.4rem, 4.4vw, 2.8rem);
+  letter-spacing: 0.3em;
+  color: var(--ink);
+  text-shadow: 0 0 22px rgba(47, 216, 255, 0.4);
+}
+
+.pause-hint {
+  font-size: clamp(0.5rem, 1.05vw, 0.68rem);
+  letter-spacing: 0.22em;
+  color: var(--ink-faint);
+  margin-bottom: 0.4rem;
+}
+
+#ui button.btn-ghost {
+  background: transparent;
+  border-color: rgba(223, 246, 255, 0.22);
+  color: var(--ink-dim);
+  box-shadow: none;
+}
+
+#ui button.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(223, 246, 255, 0.45);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+/* ==========================================================================
+   ANIMATIONS
+   ========================================================================== */
+
+@keyframes glitch {
+  0%,
+  89%,
+  100% {
+    clip-path: inset(46% 0 34% 0);
+    transform: translateX(3px);
+  }
+  90% {
+    clip-path: inset(14% 0 62% 0);
+    transform: translateX(-4px);
+  }
+  92% {
+    clip-path: inset(66% 0 12% 0);
+    transform: translateX(5px);
+  }
+  94% {
+    clip-path: inset(32% 0 48% 0);
+    transform: translateX(-2px);
+  }
+}
+
+/* Subtle entry fade for screens */
+#start-screen,
+#game-over {
+  animation: fade-in 0.35s ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title::after,
+  #start-screen,
+  #game-over,
+  .lane-key.miss {
+    animation: none;
+  }
+}
