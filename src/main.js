@@ -98,6 +98,20 @@ const CONFIG = {
   hitWindow: 0.2,
   maxMisses: 10,
 
+  /**
+   * Audio latency calibration, in seconds, adjustable by the player.
+   *
+   * Every device has a different output delay (bluetooth headphones are the
+   * worst offenders), so the drum you HEAR can arrive later than the audio
+   * clock says. A positive value means "the sound reaches me late", so the
+   * game waits that much longer before judging a note.
+   *
+   * This is the single source of truth; `audio.getTime()` applies it, which
+   * keeps judging, spawning and note positions consistent.
+   */
+  audioOffset: 0,
+  audioOffsetLimit: 0.2, // slider range is +/- 200 ms
+
   /*
    * Judgement thresholds (absolute timing error, in seconds).
    * The closer the strike to the exact beat, the better the label:
@@ -177,6 +191,124 @@ const COLORS = {
 }
 
 /* ==========================================================================
+   LOCAL STORAGE
+   Small, defensive wrapper: every read is validated and every write is
+   wrapped, so a corrupt or disabled store can never break the game.
+   ========================================================================== */
+
+const STORAGE_PREFIX = 'cyber-runner:'
+
+const storage = {
+  read(key, fallback) {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_PREFIX + key)
+      return raw === null ? fallback : JSON.parse(raw)
+    } catch {
+      return fallback
+    }
+  },
+
+  write(key, value) {
+    try {
+      window.localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value))
+    } catch {
+      // Private mode / quota exceeded: persistence is a nicety, not a need.
+    }
+  },
+
+  /** Clamp a stored number into a range, falling back if it is not one. */
+  readNumber(key, fallback, min, max) {
+    const value = this.read(key, fallback)
+    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+    return Math.min(max, Math.max(min, value))
+  },
+}
+
+/* ==========================================================================
+   PLAYER SETTINGS + MODIFIERS
+   ========================================================================== */
+
+/**
+ * Run modifiers. They change how forgiving the run is, never the scoring
+ * table — a No-Fail run is flagged so it can be excluded from records.
+ */
+const MODIFIERS = {
+  noFail: false,
+  speed: 1, // 1 | 1.5 | 2 -> multiplies noteSpeed (approach speed)
+  mirror: false, // flips the lane order 1<->4, 2<->3
+}
+
+const SPEED_OPTIONS = [1, 1.5, 2]
+
+/** Mirror a lane index if the mirror modifier is on. */
+function mirrorLane(lane) {
+  return MODIFIERS.mirror ? CONFIG.laneCount - 1 - lane : lane
+}
+
+/** The note speed actually used this run (base speed x modifier). */
+function activeNoteSpeed() {
+  return CONFIG.noteSpeed * MODIFIERS.speed
+}
+
+/* ==========================================================================
+   HIGH SCORES
+   Best score and best combo per (song, mode). No-Fail runs are not recorded,
+   because they can be played to the end without the miss limit.
+   ========================================================================== */
+
+const STORAGE_KEY_SCORES = 'scores'
+
+const highScores = {
+  /** { [songId]: { easy: {score, combo}, hard: {score, combo} } } */
+  data: {},
+
+  load() {
+    const raw = storage.read(STORAGE_KEY_SCORES, {})
+    this.data = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  },
+
+  save() {
+    storage.write(STORAGE_KEY_SCORES, this.data)
+  },
+
+  /** Stable key for a song, works for uploads too (their ids are unique). */
+  songKey(song) {
+    if (!song) return null
+    return song.id || song.url
+  },
+
+  get(song, mode) {
+    const key = this.songKey(song)
+    if (!key) return null
+    return this.data[key]?.[mode] ?? null
+  },
+
+  /**
+   * Record a finished run. Returns { isScore, isCombo, best } describing what
+   * just happened, so the game-over screen can celebrate it.
+   */
+  submit(song, mode, stats) {
+    const key = this.songKey(song)
+    if (!key) return null
+
+    const previous = this.get(song, mode) ?? { score: 0, combo: 0 }
+    const isScore = stats.score > previous.score
+    const isCombo = stats.maxCombo > previous.combo
+
+    const best = {
+      score: Math.max(previous.score, stats.score),
+      combo: Math.max(previous.combo, stats.maxCombo),
+    }
+
+    if (!this.data[key]) this.data[key] = {}
+    this.data[key][mode] = best
+    this.save()
+
+    return { isScore, isCombo, previous, best }
+  },
+}
+
+/* ==========================================================================
    DOM HANDLES
    ========================================================================== */
 
@@ -191,16 +323,37 @@ const ui = {
   startButton: document.getElementById('start-btn'),
   difficultyButtons: Array.from(document.querySelectorAll('[data-difficulty]')),
 
+  // Modifiers
+  speedButtons: Array.from(document.querySelectorAll('[data-speed]')),
+  noFailButton: document.getElementById('mod-nofail'),
+  mirrorButton: document.getElementById('mod-mirror'),
+  offsetSlider: document.getElementById('offset-slider'),
+  offsetReset: document.getElementById('offset-reset'),
+
+  // Analysis progress
+  analysis: document.getElementById('analysis'),
+  analysisLabel: document.getElementById('analysis-label'),
+  analysisBar: document.getElementById('analysis-bar'),
+  analysisCancel: document.getElementById('analysis-cancel'),
+
   songSelect: document.getElementById('song-select'),
   songInfo: document.getElementById('song-info'),
   songStatus: document.getElementById('song-status'),
   songUpload: document.getElementById('song-upload'),
   songRemoveButton: document.getElementById('song-remove-btn'),
+  retryButton: document.getElementById('song-retry'),
   previewButton: document.getElementById('preview-btn'),
   gameOver: document.getElementById('game-over'),
   finalScore: document.getElementById('final-score'),
   finalHits: document.getElementById('final-hits'),
+  finalCombo: document.getElementById('final-combo'),
+  bestScore: document.getElementById('best-score'),
+  bestCombo: document.getElementById('best-combo'),
+  bestScoreLabel: document.getElementById('best-score-label'),
+  bestComboLabel: document.getElementById('best-combo-label'),
+  noFailNote: document.getElementById('no-fail-note'),
   restartButton: document.getElementById('restart-btn'),
+  overMenuButton: document.getElementById('over-menu-btn'),
 
   judgement: document.getElementById('judgement'),
   judgementText: document.getElementById('judgement-text'),
@@ -441,6 +594,49 @@ player.add(strikeMarker)
 const laneToX = laneCenter
 
 /* ==========================================================================
+   ANALYSIS PROGRESS / CANCELLATION
+   Building a chart for a long upload takes seconds. While it runs we show a
+   progress bar on the title screen and let the player cancel it.
+   ========================================================================== */
+
+const analysisJob = {
+  active: false,
+  cancelled: false,
+}
+
+/** Update the progress bar (0..1) and its label, if a job is running. */
+function reportProgress(fraction, label) {
+  if (!analysisJob.active) return
+  const pct = Math.round(Math.min(1, Math.max(0, fraction)) * 100)
+  ui.analysisBar.style.width = `${pct}%`
+  if (label) ui.analysisLabel.textContent = label
+}
+
+/** Throw if the player cancelled; every long step calls this. */
+function throwIfCancelled() {
+  if (analysisJob.cancelled) {
+    const error = new Error('Analysis cancelled.')
+    error.cancelled = true
+    throw error
+  }
+}
+
+function showAnalysis(label = 'ANALYSING…') {
+  analysisJob.active = true
+  analysisJob.cancelled = false
+  ui.analysisLabel.textContent = label
+  ui.analysisBar.style.width = '0%'
+  ui.analysis.classList.remove('hidden')
+}
+
+function hideAnalysis() {
+  analysisJob.active = false
+  analysisJob.cancelled = false
+  ui.analysis.classList.add('hidden')
+  ui.analysisBar.style.width = '0%'
+}
+
+/* ==========================================================================
    BEAT DETECTION
    The track's real tempo is measured from the audio itself instead of being
    hard-coded. Notes then land on the song's actual drum hits rather than on an
@@ -519,14 +715,19 @@ const beatDetector = {
     if (this.decoding.has(url)) return this.decoding.get(url)
 
     const job = (async () => {
+      reportProgress(0.05, 'DOWNLOADING…')
       const response = await fetch(url)
       if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`)
       const buffer = await response.arrayBuffer()
+      throwIfCancelled()
 
+      reportProgress(0.3, 'DECODING AUDIO…')
       // OfflineAudioContext decodes without ever producing sound.
       const offline = new OfflineAudioContext(1, 44100, 44100)
       const audio = await offline.decodeAudioData(buffer)
+      throwIfCancelled()
       this.decodeCache.set(url, audio)
+      reportProgress(0.45, 'ANALYSING…')
       return audio
     })()
 
@@ -778,6 +979,9 @@ const beatDetector = {
           return out
         }
 
+        reportProgress(0.55, 'SPLITTING BANDS…')
+        throwIfCancelled()
+
         // True band-pass = high-pass then low-pass. These isolate the drums far
         // better than the old one-pole "difference of leaks" filters.
         const bandEnvelope = (loHz, hiHz) =>
@@ -801,6 +1005,8 @@ const beatDetector = {
         const kickEnv = bandEnvelope(30, 110)
         const snareEnv = bandEnvelope(150, 400)
         const hatEnv = bandEnvelope(6500, 9000)
+        reportProgress(0.75, 'FINDING DRUM HITS…')
+        throwIfCancelled()
 
         const riseLag = Math.max(1, Math.round(0.02 / hopSec)) // 20 ms look-back
         const dbRise = (env, i) =>
@@ -913,12 +1119,17 @@ const beatDetector = {
         }
 
         this.chartCache.set(key, result)
+        reportProgress(1, 'READY')
         console.info(
           `[cyber-runner] Drum chart (${mode}): ${result.count} notes ` +
             `(${(result.count / (audio.duration / 60)).toFixed(0)}/min), first at ${firstNote.toFixed(2)}s`,
         )
         return result
       } catch (error) {
+        if (error.cancelled) {
+          // The player cancelled: no chart, and no misleading fallback cached.
+          throw error
+        }
         console.warn('[cyber-runner] Drum chart failed; falling back to the beat grid.', error)
         const fallback = {
           times: [],
@@ -996,8 +1207,9 @@ const rhythm = {
 
     let emitted = 0
     // A note appears at the far end of the lane and must reach the hit line
-    // exactly when the drum sounds.
-    const travel = Math.abs(CONFIG.spawnZ - CONFIG.hitLineZ) / CONFIG.noteSpeed
+    // exactly when the drum sounds. A speed modifier shortens this lead time,
+    // so the note travels faster and appears later — the hit moment never moves.
+    const travel = Math.abs(CONFIG.spawnZ - CONFIG.hitLineZ) / activeNoteSpeed()
 
     while (this.cursor < this.times.length) {
       const hitTime = this.times[this.cursor]
@@ -1170,9 +1382,9 @@ const obstacleManager = {
         // 2.6 s away must sit at the FAR end (-78), not +78: it travels toward
         // the camera, so a positive "time remaining" maps to a negative Z.
         const timeUntilHit = note.userData.hitTime - audioTime
-        note.position.z = CONFIG.hitLineZ - timeUntilHit * CONFIG.noteSpeed
+        note.position.z = CONFIG.hitLineZ - timeUntilHit * activeNoteSpeed()
       } else {
-        note.position.z += CONFIG.noteSpeed * dt
+        note.position.z += activeNoteSpeed() * dt
       }
 
       // Safety net for notes that somehow slip through resolution.
@@ -1344,7 +1556,7 @@ function timeToHit(note) {
   }
 
   // Fallback (audio paused/not ready): derive from the mesh position.
-  return (note.position.z - CONFIG.hitLineZ) / CONFIG.noteSpeed
+  return (note.position.z - CONFIG.hitLineZ) / activeNoteSpeed()
 }
 
 /**
@@ -1590,10 +1802,148 @@ const audio = {
     })
   },
 
-  /** Prefer the audio element's own clock; it is the ground truth for sync. */
+  /**
+   * Prefer the audio element's own clock; it is the ground truth for sync.
+   *
+   * The calibrated latency offset is subtracted here so that every consumer
+   * (judging, spawning, note positions) sees the same corrected clock: a
+   * positive offset means "the sound I hear is late", so the game pretends the
+   * playhead is slightly behind where the element claims it is.
+   */
   getTime() {
-    return this.el && !this.el.paused ? this.el.currentTime : null
+    if (!this.el || this.el.paused) return null
+    return this.el.currentTime - CONFIG.audioOffset
   },
+}
+
+/* ==========================================================================
+   ID3 TAGS
+   Reads the title / artist / album out of an MP3 so uploaded songs show a real
+   name instead of a raw file name. Supports ID3v2.2/v2.3/v2.4 and ID3v1.
+   Only the first few KB are read, so this stays instant for big files.
+   ========================================================================== */
+
+const ID3_READ_BYTES = 256 * 1024
+
+/** Decode a text frame, honouring the declared encoding byte. */
+function decodeId3Text(bytes, encoding) {
+  if (!bytes.length) return ''
+
+  let text
+  if (encoding === 0) {
+    // ISO-8859-1: map straight to code points (avoids UTF-8 mangling).
+    text = String.fromCharCode(...bytes)
+  } else if (encoding === 3) {
+    text = new TextDecoder('utf-8').decode(bytes)
+  } else {
+    // 1 = UTF-16 with BOM, 2 = UTF-16BE.
+    if (encoding === 2) {
+      const swapped = new Uint8Array(bytes.length)
+      for (let i = 0; i + 1 < bytes.length; i += 2) {
+        swapped[i] = bytes[i + 1]
+        swapped[i + 1] = bytes[i]
+      }
+      text = new TextDecoder('utf-16le').decode(swapped)
+    } else {
+      text = new TextDecoder('utf-16le').decode(bytes)
+    }
+  }
+  // Strip BOM / NUL padding and collapse whitespace.
+  return text.replace(/^\uFEFF/, '').replace(/\0+$/, '').trim()
+}
+
+/** Remove the "01 " track-number style prefix some taggers leave in titles. */
+function cleanTagText(value) {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Parse ID3 tags from an MP3 blob. Returns { title, artist, album } with only
+ * the fields that were found (possibly an empty object).
+ */
+async function readId3Tags(file) {
+  if (!file || !/\.mp3$/i.test(file.name)) return {}
+
+  let bytes
+  try {
+    const head = new Uint8Array(await file.slice(0, ID3_READ_BYTES).arrayBuffer())
+    bytes = head
+  } catch {
+    return {}
+  }
+
+  const result = {}
+
+  // ---- ID3v2 ----
+  if (bytes.length > 10 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+    const major = bytes[3]
+    // The size is a 28-bit synchsafe integer (7 usable bits per byte).
+    const size = ((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) |
+      ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f)
+
+    const body = bytes.subarray(10, Math.min(10 + size, bytes.length))
+    const idLength = major === 2 ? 3 : 4
+    const headerLength = major === 2 ? 6 : 10
+
+    let offset = 0
+    // Stop at the padding (a run of zero bytes) or the end of the tag.
+    while (offset + headerLength <= body.length) {
+      const id = String.fromCharCode(...body.subarray(offset, offset + idLength))
+      if (!/^[A-Z0-9]{3,4}$/.test(id)) break
+
+      const frameSize =
+        major === 2
+          ? (body[offset + 3] << 16) | (body[offset + 4] << 8) | body[offset + 5]
+          : major === 3
+            ? (body[offset + 4] << 24) | (body[offset + 5] << 16) |
+              (body[offset + 6] << 8) | body[offset + 7]
+            : // v2.4 frame sizes are also synchsafe
+              ((body[offset + 4] & 0x7f) << 21) | ((body[offset + 5] & 0x7f) << 14) |
+              ((body[offset + 6] & 0x7f) << 7) | (body[offset + 7] & 0x7f)
+
+      if (frameSize <= 0) break
+
+      const dataStart = offset + headerLength
+      const dataEnd = Math.min(dataStart + frameSize, body.length)
+      const data = body.subarray(dataStart, dataEnd)
+
+      // TIT2 = title, TPE1 = artist, TALB = album (v2.2 uses 3-char ids).
+      const isTitle = id === 'TIT2' || id === 'TT2'
+      const isArtist = id === 'TPE1' || id === 'TP1'
+      const isAlbum = id === 'TALB' || id === 'TAL'
+
+      if (data.length > 1 && (isTitle || isArtist || isAlbum)) {
+        const text = cleanTagText(decodeId3Text(data.subarray(1), data[0]))
+        if (text) {
+          if (isTitle && !result.title) result.title = text
+          if (isArtist && !result.artist) result.artist = text
+          if (isAlbum && !result.album) result.album = text
+        }
+      }
+
+      offset = dataEnd
+    }
+  }
+
+  // ---- ID3v1 fallback: the last 128 bytes of the file ----
+  if (!result.title || !result.artist) {
+    try {
+      const tail = new Uint8Array(await file.slice(-128).arrayBuffer())
+      const isV1 =
+        tail.length === 128 && tail[0] === 0x54 && tail[1] === 0x41 && tail[2] === 0x47
+      if (isV1) {
+        const decode = (from, to) =>
+          cleanTagText(new TextDecoder('iso-8859-1').decode(tail.subarray(from, to)))
+        if (!result.title) result.title = decode(3, 33)
+        if (!result.artist) result.artist = decode(33, 63)
+        if (!result.album) result.album = decode(63, 93)
+      }
+    } catch {
+      // Ignore: an unreadable tail just means no v1 tags.
+    }
+  }
+
+  return result
 }
 
 /* ==========================================================================
@@ -1775,9 +2125,10 @@ const songLibrary = {
 
   /**
    * Validate and register a user-picked audio file.
+   * Reads ID3 tags (when present) so the song shows its real title/artist.
    * Returns { ok: true, song } or { ok: false, message }.
    */
-  addFile(file) {
+  async addFile(file) {
     if (!file) return { ok: false, message: 'No file selected.' }
 
     const isAudioType = file.type.startsWith('audio/')
@@ -1798,13 +2149,14 @@ const songLibrary = {
     )
     if (existing) return { ok: true, song: existing, duplicate: true }
 
+    const tags = await readId3Tags(file)
     const url = URL.createObjectURL(file)
-    const title = file.name.replace(/\.[^.]+$/, '')
+    const fallbackTitle = file.name.replace(/\.[^.]+$/, '')
 
     const song = {
       id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      title,
-      artist: '',
+      title: tags.title || fallbackTitle,
+      artist: tags.artist || '',
       url,
       source: 'uploaded',
       fileName: file.name,
@@ -2077,7 +2429,9 @@ const game = {
 
     if (grade === 'miss') {
       this.missCount += 1
-      if (this.missCount >= CONFIG.maxMisses) {
+      // No-Fail (practice): misses still count on the HUD and break the combo,
+      // but the run is never cut short by the miss limit.
+      if (!MODIFIERS.noFail && this.missCount >= CONFIG.maxMisses) {
         this.updateHud()
         showJudgement('miss', 0)
         this.gameOver()
@@ -2111,11 +2465,39 @@ const game = {
 
     ui.finalScore.textContent = String(this.score)
     ui.finalHits.textContent = String(this.hits)
+    this.renderGameOverRecords()
     ui.laneKeys.classList.add('hidden')
     ui.pauseButton.classList.add('hidden')
     ui.pauseScreen.classList.add('hidden')
     ui.gameOver.classList.remove('hidden')
     shakeAmount = 0.18
+  },
+
+  /**
+   * Store a record for this run (unless it was a No-Fail) and paint the
+   * best-score / best-combo lines on the game-over screen.
+   */
+  renderGameOverRecords() {
+    const mode = beatDetector.resolveMode(this.difficulty)
+    const song = this.currentSong
+    const runStats = { score: this.score, maxCombo: this.maxCombo }
+
+    const result = MODIFIERS.noFail ? null : highScores.submit(song, mode, runStats)
+    const best = highScores.get(song, mode)
+
+    // "NEW BEST" only makes sense when the run actually set the record.
+    const scoreLabel = ui.bestScoreLabel
+    const comboLabel = ui.bestComboLabel
+    if (scoreLabel && comboLabel) {
+      scoreLabel.classList.toggle('is-record', !!result?.isScore)
+      comboLabel.classList.toggle('is-record', !!result?.isCombo)
+    }
+
+    ui.finalCombo.textContent = String(this.maxCombo)
+    ui.bestScore.textContent = best ? String(best.score) : '—'
+    ui.bestCombo.textContent = best ? String(best.combo) : '—'
+
+    ui.noFailNote.classList.toggle('hidden', !MODIFIERS.noFail)
   },
 
   /* ---------------- PAUSE / RESUME ---------------- */
@@ -2269,8 +2651,9 @@ function onBeat(noteIndex, hitTime) {
   game.recentLanes.push(lane)
   if (game.recentLanes.length > 3) game.recentLanes.shift()
 
-  // Carry the exact drum time so the note can verify itself if needed.
-  obstacleManager.spawn(lane, hitTime)
+  // Mirror is applied at the very last moment: the chart generator behaves
+  // exactly the same, the result is simply flipped left-right.
+  obstacleManager.spawn(mirrorLane(lane), hitTime)
 
   // Show the song position (in bars) rather than a note counter.
   const bar = Math.floor(hitTime / (rhythm.beatInterval * 4)) + 1
@@ -2408,12 +2791,13 @@ function init() {
   ui.previewButton.addEventListener('click', () => songLibrary.togglePreview())
 
   // Upload your own MP3
-  ui.songUpload.addEventListener('change', (event) => {
+  ui.songUpload.addEventListener('change', async (event) => {
     const file = event.target.files?.[0]
     ui.songUpload.value = '' // allow re-picking the same file later
     if (!file) return
 
-    const result = songLibrary.addFile(file)
+    songLibrary.setStatus('READING FILE…', 'info')
+    const result = await songLibrary.addFile(file)
     if (!result.ok) {
       songLibrary.setStatus(result.message, 'error')
       return
@@ -2439,8 +2823,33 @@ function init() {
 
   ui.startButton.addEventListener('click', () => startSelectedSong())
   ui.restartButton.addEventListener('click', () => game.start())
+  ui.overMenuButton.addEventListener('click', () => goToMainMenu())
   ui.quitButton.addEventListener('click', () => game.start())
   ui.menuButton.addEventListener('click', () => goToMainMenu())
+
+  // Run modifiers -------------------------------------------------------
+  for (const button of ui.speedButtons) {
+    button.addEventListener('click', () => setSpeed(Number(button.dataset.speed)))
+  }
+  ui.noFailButton.addEventListener('click', () => setNoFail(!MODIFIERS.noFail))
+  ui.mirrorButton.addEventListener('click', () => setMirror(!MODIFIERS.mirror))
+
+  // Audio latency calibration -------------------------------------------
+  ui.offsetSlider.addEventListener('input', () => {
+    setAudioOffset(Number(ui.offsetSlider.value) / 1000)
+  })
+  ui.offsetReset.addEventListener('click', () => {
+    setAudioOffset(0)
+  })
+
+  // Cancel an in-flight chart build --------------------------------------
+  ui.analysisCancel.addEventListener('click', () => cancelAnalysis())
+
+  // Retry a song whose audio failed to decode ---------------------------
+  ui.retryButton.addEventListener('click', () => retrySelectedSong())
+
+  // Restore the player's saved settings (offset, modifiers, records).
+  loadSettings()
 
   // Difficulty toggle. It only changes which chart gets built — never timing or
   // scoring — and the choice survives RUN AGAIN / RESTART / MAIN MENU.
@@ -2481,7 +2890,164 @@ function prefetchSelectedSong() {
   const mode = beatDetector.resolveMode(game.difficulty)
   beatDetector.detect(song.url).catch(() => {})
   // Only the selected mode's chart is warmed — the other mode builds on demand.
-  beatDetector.buildChart(song.url, { difficulty: mode }).catch(() => {})
+  beatDetector
+    .buildChart(song.url, { difficulty: mode })
+    .then((chart) => {
+      // A fallback chart means the audio could not be analysed: offer a retry.
+      if (chart && chart.fallback && !game.isPlaying) {
+        ui.retryButton.classList.remove('hidden')
+      } else {
+        ui.retryButton.classList.add('hidden')
+      }
+    })
+    .catch(() => {
+      if (!game.isPlaying) ui.retryButton.classList.remove('hidden')
+    })
+}
+
+/* ==========================================================================
+   SETTINGS / MODIFIER UI
+   ========================================================================== */
+
+const STORAGE_KEY_SETTINGS = 'settings'
+
+/** Apply a speed modifier, repaint the picker, and persist the choice. */
+function setSpeed(speed) {
+  const next = SPEED_OPTIONS.includes(speed) ? speed : 1
+  MODIFIERS.speed = next
+  renderModifiers()
+  saveSettings()
+}
+
+function setNoFail(on) {
+  MODIFIERS.noFail = !!on
+  renderModifiers()
+  saveSettings()
+}
+
+function setMirror(on) {
+  MODIFIERS.mirror = !!on
+  renderModifiers()
+  saveSettings()
+}
+
+/**
+ * Set the audio latency offset (seconds). Applied live, so a running game
+ * immediately judges against the corrected clock.
+ *
+ * `persist` is false while restoring saved settings, so a page load does not
+ * immediately rewrite the stored value.
+ */
+function setAudioOffset(seconds, persist = true) {
+  const limit = CONFIG.audioOffsetLimit
+  const clamped = Math.min(limit, Math.max(-limit, Number(seconds) || 0))
+  CONFIG.audioOffset = clamped
+
+  const ms = Math.round(clamped * 1000)
+  ui.offsetSlider.value = String(ms)
+  ui.offsetReset.textContent = ms === 0 ? '0 ms' : `${ms > 0 ? '+' : ''}${ms} ms`
+  ui.offsetReset.classList.toggle('is-active', ms !== 0)
+
+  if (persist) saveSettings()
+}
+
+/** Paint every modifier control from the current state. */
+function renderModifiers() {
+  for (const button of ui.speedButtons) {
+    const active = Number(button.dataset.speed) === MODIFIERS.speed
+    button.setAttribute('aria-checked', active ? 'true' : 'false')
+  }
+  ui.noFailButton.setAttribute('aria-pressed', MODIFIERS.noFail ? 'true' : 'false')
+  ui.noFailButton.classList.toggle('is-on', MODIFIERS.noFail)
+  ui.mirrorButton.setAttribute('aria-pressed', MODIFIERS.mirror ? 'true' : 'false')
+  ui.mirrorButton.classList.toggle('is-on', MODIFIERS.mirror)
+}
+
+function saveSettings() {
+  storage.write(STORAGE_KEY_SETTINGS, {
+    audioOffsetMs: Math.round(CONFIG.audioOffset * 1000),
+    speed: MODIFIERS.speed,
+    noFail: MODIFIERS.noFail,
+    mirror: MODIFIERS.mirror,
+    difficulty: game.difficulty,
+  })
+}
+
+/** Restore settings saved on a previous visit. */
+function loadSettings() {
+  const saved = storage.read(STORAGE_KEY_SETTINGS, null)
+  const settings = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+
+  // Clamp a stored offset into the legal slider range.
+  const limitMs = CONFIG.audioOffsetLimit * 1000
+  const rawOffset = Number(settings.audioOffsetMs)
+  const offsetMs = Number.isFinite(rawOffset)
+    ? Math.min(limitMs, Math.max(-limitMs, rawOffset))
+    : 0
+  setAudioOffset(offsetMs / 1000, false)
+
+  const speed = Number(settings.speed)
+  MODIFIERS.speed = SPEED_OPTIONS.includes(speed) ? speed : 1
+  MODIFIERS.noFail = settings.noFail === true
+  MODIFIERS.mirror = settings.mirror === true
+  renderModifiers()
+
+  if (settings.difficulty) {
+    game.difficulty = beatDetector.resolveMode(settings.difficulty)
+  }
+
+  highScores.load()
+}
+
+/** Abort the running chart build and return the title screen to normal. */
+function cancelAnalysis() {
+  if (!analysisJob.active) return
+  analysisJob.cancelled = true
+  hideAnalysis()
+  songLibrary.setStatus('Analysis cancelled.', 'warn')
+  ui.startButton.disabled = false
+  songLibrary.renderInfo()
+}
+
+/**
+ * Clear the cached failure for the selected song and analyse it again.
+ * Only meaningful when a decode/chart build failed, so the RETRY button is
+ * shown exactly in that situation.
+ */
+async function retrySelectedSong() {
+  const song = songLibrary.selected
+  if (!song) return
+
+  // Drop the failed decode and any fallback chart so this is a real retry.
+  beatDetector.decodeCache.delete(song.url)
+  beatDetector.decoding.delete(song.url)
+  beatDetector.chartCache.clear()
+  beatDetector.chartBuilding.clear()
+  beatDetector.beatCache.delete(song.url)
+
+  ui.retryButton.classList.add('hidden')
+  songLibrary.clearStatus()
+  showAnalysis('RETRYING…')
+
+  try {
+    const mode = beatDetector.resolveMode(game.difficulty)
+    const chart = await beatDetector.buildChart(song.url, { difficulty: mode })
+    hideAnalysis()
+
+    if (chart.fallback) {
+      songLibrary.setStatus('Still could not read this audio file. Try a different MP3.', 'error')
+      ui.retryButton.classList.remove('hidden')
+      return
+    }
+    songLibrary.setStatus(`Ready — ${chart.count} notes found.`, 'ok')
+    prefetchSelectedSong()
+  } catch (error) {
+    hideAnalysis()
+    if (!error?.cancelled) {
+      songLibrary.setStatus('Retry failed. The file may be corrupt.', 'error')
+      ui.retryButton.classList.remove('hidden')
+    }
+  }
 }
 
 /**
@@ -2493,6 +3059,7 @@ function setDifficulty(mode) {
   if (game.difficulty === next) return
   game.difficulty = next
   renderDifficulty()
+  saveSettings()
   // Warm the newly selected mode's chart for the current song.
   prefetchSelectedSong()
 }
@@ -2519,11 +3086,14 @@ function goToMainMenu() {
   game.currentSong = null
   obstacleManager.clear()
   input.releaseAll()
+  hideAnalysis()
+  ui.retryButton.classList.add('hidden')
   songLibrary.selected = songLibrary.first()
   songLibrary.render()
   songLibrary.clearStatus()
   // Keep the last chosen difficulty visible and active on the title screen.
   renderDifficulty()
+  renderModifiers()
   ui.startScreen.classList.remove('hidden')
   ui.gameOver.classList.add('hidden')
   ui.pauseScreen.classList.add('hidden')
@@ -2553,7 +3123,9 @@ async function startSelectedSong() {
   const mode = beatDetector.resolveMode(game.difficulty)
   const cached = beatDetector.chartCache.has(beatDetector.chartKey(song.url, mode))
   if (!cached) {
-    songLibrary.setStatus('ANALYSING… this can take a few seconds.', 'warn')
+    // A first run on an upload can take a few seconds: show real progress and
+    // let the player back out instead of staring at a frozen button.
+    showAnalysis('ANALYSING…')
     ui.startButton.disabled = true
     songLibrary.renderInfo()
   }
@@ -2561,9 +3133,17 @@ async function startSelectedSong() {
   try {
     await game.start(song)
     songLibrary.clearStatus()
+    if (!cached) hideAnalysis()
   } catch (error) {
-    console.error('[cyber-runner] Could not start the song.', error)
-    songLibrary.setStatus('Could not start this song. Try another file.', 'error')
+    if (error?.cancelled) {
+      // Cancelled from the analysis bar: just restore the title screen.
+      hideAnalysis()
+      songLibrary.setStatus('Analysis cancelled.', 'warn')
+    } else {
+      console.error('[cyber-runner] Could not start the song.', error)
+      hideAnalysis()
+      songLibrary.setStatus('Could not start this song. Try another file.', 'error')
+    }
   } finally {
     ui.startButton.disabled = false
   }
@@ -2579,6 +3159,27 @@ window.__cyberRunner = {
   },
   get beatDetector() {
     return beatDetector
+  },
+  get modifiers() {
+    return MODIFIERS
+  },
+  get highScores() {
+    return highScores
+  },
+  get audioOffset() {
+    return CONFIG.audioOffset
+  },
+  get baseNoteSpeed() {
+    return CONFIG.noteSpeed
+  },
+  activeNoteSpeed() {
+    return activeNoteSpeed()
+  },
+  mirrorLane(lane) {
+    return mirrorLane(lane)
+  },
+  readId3Tags(file) {
+    return readId3Tags(file)
   },
   get rhythm() {
     return rhythm

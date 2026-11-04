@@ -562,6 +562,224 @@ kbd {
 }
 
 /* ==========================================================================
+   MODIFIERS  (speed / no-fail / mirror / latency offset)
+   ========================================================================== */
+
+#modifiers {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+  width: min(30rem, 88vw);
+  margin: 0.15rem 0 0.3rem;
+}
+
+.mod-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.mod-label {
+  flex: 0 0 4.6rem;
+  text-align: right;
+  font-size: clamp(0.46rem, 0.9vw, 0.58rem);
+  letter-spacing: 0.24em;
+  color: var(--ink-faint);
+}
+
+.seg-small {
+  display: flex;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.mod-toggles {
+  display: flex;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+/* Small segmented buttons: quieter than the difficulty picker. */
+#ui #modifiers .seg-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0.38rem 0.5rem;
+  font-size: clamp(0.48rem, 0.95vw, 0.6rem);
+  letter-spacing: 0.16em;
+  border-radius: 0.35rem;
+  color: var(--ink-faint);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1.5px solid rgba(223, 246, 255, 0.14);
+  box-shadow: none;
+  opacity: 0.8;
+  transition:
+    color 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    opacity 0.16s ease;
+}
+
+#ui #modifiers .seg-btn:hover {
+  opacity: 1;
+  color: var(--ink);
+  border-color: rgba(47, 216, 255, 0.45);
+  background: rgba(47, 216, 255, 0.08);
+}
+
+#ui #modifiers .seg-btn[aria-checked='true'],
+#ui #modifiers .seg-btn[aria-pressed='true'] {
+  opacity: 1;
+  color: #eaf9ff;
+  background: rgba(47, 216, 255, 0.18);
+  border-color: rgba(47, 216, 255, 0.85);
+  box-shadow:
+    0 0 14px rgba(47, 216, 255, 0.28),
+    inset 0 0 10px rgba(47, 216, 255, 0.18);
+}
+
+/* NO-FAIL uses the amber accent because it changes how a run is scored. */
+#ui #modifiers #mod-nofail.is-on {
+  color: #fff3d4;
+  background: rgba(255, 196, 67, 0.2);
+  border-color: rgba(255, 196, 67, 0.85);
+  box-shadow:
+    0 0 14px rgba(255, 196, 67, 0.3),
+    inset 0 0 10px rgba(255, 196, 67, 0.18);
+}
+
+/* MIRROR reads as magenta, matching the mirrored-lane feel. */
+#ui #modifiers #mod-mirror.is-on {
+  color: #ffe3ee;
+  background: rgba(255, 92, 157, 0.2);
+  border-color: rgba(255, 92, 157, 0.85);
+  box-shadow:
+    0 0 14px rgba(255, 92, 157, 0.3),
+    inset 0 0 10px rgba(255, 92, 157, 0.18);
+}
+
+/* ---- Latency offset slider ---- */
+.offset-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+#offset-slider {
+  flex: 1;
+  min-width: 0;
+  height: 1.1rem;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+#offset-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    rgba(47, 216, 255, 0.15),
+    rgba(47, 216, 255, 0.6),
+    rgba(47, 216, 255, 0.15)
+  );
+}
+
+#offset-slider::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(47, 216, 255, 0.3);
+}
+
+#offset-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-top: -0.33rem;
+  border-radius: 50%;
+  background: #eaf9ff;
+  border: 1.5px solid var(--lane-0);
+  box-shadow: 0 0 10px rgba(47, 216, 255, 0.7);
+}
+
+#offset-slider::-moz-range-thumb {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background: #eaf9ff;
+  border: 1.5px solid var(--lane-0);
+  box-shadow: 0 0 10px rgba(47, 216, 255, 0.7);
+}
+
+#offset-slider:focus-visible {
+  outline: none;
+}
+
+#ui #offset-reset {
+  min-width: 4.2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+#ui #offset-reset.is-active {
+  color: #ffe9a3;
+  border-color: rgba(255, 196, 67, 0.55);
+}
+
+.mod-hint {
+  font-size: clamp(0.4rem, 0.82vw, 0.52rem);
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+/* ==========================================================================
+   ANALYSIS PROGRESS
+   ========================================================================== */
+
+#analysis {
+  pointer-events: auto;
+  width: min(30rem, 88vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.2rem 0 0.1rem;
+}
+
+.analysis-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+#analysis-label {
+  font-size: clamp(0.48rem, 0.95vw, 0.62rem);
+  letter-spacing: 0.22em;
+  color: #ffd97a;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(223, 246, 255, 0.1);
+  overflow: hidden;
+}
+
+#analysis-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(47, 216, 255, 0.7), #8ef7ff);
+  box-shadow: 0 0 12px rgba(47, 216, 255, 0.6);
+  transition: width 0.25s ease;
+}
+
+/* ==========================================================================
    GAME OVER
    ========================================================================== */
 
@@ -608,11 +826,74 @@ kbd {
 }
 
 #final-score,
-#final-hits {
+#final-hits,
+#final-combo {
   font-weight: 700;
   font-size: 1.6em;
   color: var(--ink);
   vertical-align: middle;
+}
+
+/* ---- Best score / best combo block ---- */
+.over-best {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0.5rem 0 0.2rem;
+  padding: 0.55rem 1.4rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(47, 216, 255, 0.18);
+  background: rgba(47, 216, 255, 0.04);
+}
+
+.over-best-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.6rem;
+  font-size: clamp(0.5rem, 1vw, 0.64rem);
+  letter-spacing: 0.22em;
+  color: var(--ink-faint);
+}
+
+.over-best-line span:last-child {
+  font-weight: 700;
+  font-size: 1.25em;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+
+/* A record just set on this run glows amber. */
+.over-best-line span:first-child.is-record {
+  color: #ffd97a;
+  text-shadow: 0 0 12px rgba(255, 196, 67, 0.55);
+}
+
+.over-best-line span.is-record ~ span,
+.over-best-line:has(.is-record) span:last-child {
+  color: #ffe9a3;
+  text-shadow: 0 0 12px rgba(255, 196, 67, 0.45);
+}
+
+.over-nofail {
+  font-size: clamp(0.46rem, 0.9vw, 0.58rem);
+  letter-spacing: 0.2em;
+  color: #ffd97a;
+  margin-bottom: 0.3rem;
+}
+
+.over-buttons {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.4rem;
+}
+
+#ui #over-menu-btn {
+  font-size: clamp(0.66rem, 1.2vw, 0.82rem);
+  padding: 0.85rem 1.6rem;
 }
 
 /* ==========================================================================

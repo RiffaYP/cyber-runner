@@ -83,6 +83,7 @@
             <button id="song-remove-btn" type="button" class="btn-small btn-ghost hidden">REMOVE</button>
           </div>
           <p id="song-status" class="song-status" data-kind="info"></p>
+          <button id="song-retry" type="button" class="btn-small btn-ghost hidden">RETRY</button>
         </div>
 
         <!-- Difficulty: only the note density changes, never timing/scoring -->
@@ -114,6 +115,58 @@
           </button>
         </div>
 
+        <!-- Run modifiers: practice helper, approach speed, mirrored lanes -->
+        <div id="modifiers" role="group" aria-label="Modifiers">
+          <div class="mod-row">
+            <span class="mod-label">SPEED</span>
+            <div id="speed-picker" class="segmented seg-small" role="radiogroup" aria-label="Note speed">
+              <button type="button" class="seg-btn" data-speed="1" role="radio" aria-checked="true">1x</button>
+              <button type="button" class="seg-btn" data-speed="1.5" role="radio" aria-checked="false">1.5x</button>
+              <button type="button" class="seg-btn" data-speed="2" role="radio" aria-checked="false">2x</button>
+            </div>
+          </div>
+          <div class="mod-row">
+            <span class="mod-label">OPTIONS</span>
+            <div class="mod-toggles">
+              <button id="mod-nofail" type="button" class="seg-btn toggle-btn" aria-pressed="false">
+                NO-FAIL
+              </button>
+              <button id="mod-mirror" type="button" class="seg-btn toggle-btn" aria-pressed="false">
+                MIRROR
+              </button>
+            </div>
+          </div>
+          <div class="mod-row">
+            <span class="mod-label">OFFSET</span>
+            <div class="offset-wrap">
+              <input
+                id="offset-slider"
+                type="range"
+                min="-200"
+                max="200"
+                step="5"
+                value="0"
+                aria-label="Audio latency offset in milliseconds"
+              />
+              <button id="offset-reset" type="button" class="btn-small btn-ghost" title="Reset offset to 0">
+                0 ms
+              </button>
+            </div>
+          </div>
+          <p class="mod-hint">
+            HEAR THE BEAT LATE? SLIDE RIGHT. NO-FAIL RUNS ARE NOT SCORED.
+          </p>
+        </div>
+
+        <!-- Analysis progress (shown while a chart is being built) -->
+        <div id="analysis" class="hidden" role="status" aria-live="polite">
+          <div class="analysis-row">
+            <span id="analysis-label">ANALYSING…</span>
+            <button id="analysis-cancel" type="button" class="btn-small btn-ghost">CANCEL</button>
+          </div>
+          <div class="analysis-track"><div id="analysis-bar"></div></div>
+        </div>
+
         <button id="start-btn" type="button">START GAME</button>
 
         <div class="key-guide">
@@ -134,7 +187,24 @@
         <p class="over-reason">TOO MANY MISSED NOTES</p>
         <p class="over-score">FINAL SCORE <span id="final-score">0</span></p>
         <p class="over-score">NOTES HIT <span id="final-hits">0</span></p>
-        <button id="restart-btn" type="button">RUN AGAIN</button>
+        <p class="over-score">BEST COMBO <span id="final-combo">0</span></p>
+
+        <div class="over-best">
+          <p class="over-best-line">
+            <span id="best-score-label">BEST SCORE</span>
+            <span id="best-score">—</span>
+          </p>
+          <p class="over-best-line">
+            <span id="best-combo-label">BEST COMBO</span>
+            <span id="best-combo">—</span>
+          </p>
+        </div>
+        <p id="no-fail-note" class="over-nofail hidden">NO-FAIL RUN · NOT RECORDED</p>
+
+        <div class="over-buttons">
+          <button id="restart-btn" type="button">RUN AGAIN</button>
+          <button id="over-menu-btn" type="button" class="btn-ghost">MAIN MENU</button>
+        </div>
       </div>
     </div>
 
