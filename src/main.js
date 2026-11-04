@@ -26,6 +26,24 @@ const CONFIG = {
     }).join('/')
   },
 
+  /**
+   * Resolve a catalogue URL against the base the site is actually served from.
+   *
+   * The catalogue stores absolute production paths ("/cyber-runner/songs/...")
+   * because that is how GitHub Pages serves the app. On the dev server the site
+   * lives at "/", so those paths 404 — every song then looks "missing" and the
+   * chart silently falls back to the beat grid. Re-rooting the path on the
+   * current base fixes dev, preview and Pages with one rule.
+   */
+  resolveAssetUrl(url) {
+    const base = import.meta.env.BASE_URL || '/'
+    const prodRoot = '/cyber-runner/'
+    if (url.startsWith(prodRoot)) {
+      return base.replace(/\/?$/, '/') + url.slice(prodRoot.length)
+    }
+    return url
+  },
+
   /*
    * Song catalogue. Songs are listed ALPHABETICALLY by title at runtime, so
    * order here does not matter. There is no "default" song — the first entry
@@ -103,7 +121,40 @@ const CONFIG = {
 
   // Minimum gap between two consecutive chart notes (seconds). Keeps fast
   // drum fills playable instead of spawning un-hittable note clusters.
+  // This is only the fallback for an unknown mode; each difficulty below owns
+  // its own gap so switching modes never mutates global config.
   chartMinGap: 0.26,
+
+  /**
+   * Difficulty modes. The ONLY difference between them is which detected drum
+   * onsets become notes (and how aggressively the chart is thinned). Timing
+   * windows, note speed, miss limit and scoring are identical in both modes —
+   * so only the number of notes changes.
+   *
+   *   easy  kick + snare           (the classic chart)
+   *   hard  kick + snare + hi-hat  (~1.6-2.2x the notes)
+   */
+  difficulties: {
+    easy: {
+      label: 'EASY',
+      // Kick + snare only; hats are left out of the chart.
+      useHats: false,
+      // Two hits closer than this are the same physical strike (e.g. a hat on
+      // top of a kick) and collapse into a single note.
+      mergeWindow: 0.055,
+      chartMinGap: 0.26,
+    },
+    hard: {
+      label: 'HARD',
+      // Hats fill the space between kick and snare.
+      useHats: true,
+      mergeWindow: 0.055,
+      // Thinning gap. 0.14 s is still comfortably hittable: the PERFECT window
+      // is +/-0.055 s, so consecutive notes never share the same window.
+      chartMinGap: 0.14,
+    },
+  },
+  defaultDifficulty: 'easy',
 
   // Seconds of "3 - 2 - 1" countdown before the music starts, so the player
   // has time to get their hands on the keys.
@@ -138,6 +189,7 @@ const ui = {
   laneKeys: document.getElementById('lane-keys'),
   startScreen: document.getElementById('start-screen'),
   startButton: document.getElementById('start-btn'),
+  difficultyButtons: Array.from(document.querySelectorAll('[data-difficulty]')),
 
   songSelect: document.getElementById('song-select'),
   songInfo: document.getElementById('song-info'),
@@ -408,10 +460,16 @@ const beatDetector = {
   beatCache: new Map(),
   analysing: new Map(),
 
-  /** Forget everything (used when an uploaded blob URL is revoked). */
+  /** Forget everything for a URL (used when an uploaded blob URL is revoked). */
   forget(url) {
     this.beatCache.delete(url)
     this.analysing.delete(url)
+    // Charts are keyed per (mode, url), so drop every mode's entry.
+    for (const mode of Object.keys(CONFIG.difficulties)) {
+      const key = this.chartKey(url, mode)
+      this.chartCache.delete(key)
+      this.chartBuilding.delete(key)
+    }
   },
 
   /**
@@ -607,9 +665,31 @@ const beatDetector = {
   chartCache: new Map(),
   chartBuilding: new Map(),
 
-  async buildChart(url) {
-    if (this.chartCache.has(url)) return this.chartCache.get(url)
-    if (this.chartBuilding.has(url)) return this.chartBuilding.get(url)
+  /**
+   * Cache key for a chart. The chart depends on BOTH the audio and the
+   * difficulty mode, so the key must include the mode — otherwise picking the
+   * same song in EASY then HARD would silently reuse the EASY chart.
+   */
+  chartKey(url, mode) {
+    return `${mode}:${url}`
+  },
+
+  /** Resolve a difficulty key ('easy' | 'hard') from anything given. */
+  resolveMode(mode) {
+    return CONFIG.difficulties[mode] ? mode : CONFIG.defaultDifficulty
+  },
+
+  async buildChart(url, options = {}) {
+    const mode = this.resolveMode(options.difficulty)
+    const preset = CONFIG.difficulties[mode]
+    // Per-call settings: never mutate CONFIG, so each mode's cache stays valid.
+    const useHats = options.useHats ?? preset.useHats
+    const mergeWindow = options.mergeWindow ?? preset.mergeWindow
+    const minGap = options.chartMinGap ?? preset.chartMinGap
+    const key = this.chartKey(url, mode)
+
+    if (this.chartCache.has(key)) return this.chartCache.get(key)
+    if (this.chartBuilding.has(key)) return this.chartBuilding.get(key)
 
     const job = (async () => {
       try {
@@ -621,103 +701,202 @@ const beatDetector = {
         const mono = new Float32Array(left.length)
         for (let i = 0; i < left.length; i++) mono[i] = (left[i] + right[i]) * 0.5
 
-        // --- onset envelope for one frequency band ----------------------
-        const bandFlux = (cutoffA, cutoffB) => {
-          const y = new Float32Array(mono.length)
-          let lp = 0
-          let lp2 = 0
-          for (let i = 0; i < mono.length; i++) {
-            lp += cutoffB * (mono[i] - lp)
-            lp2 += cutoffA * (lp - lp2)
-            y[i] = lp - lp2
-          }
+        /* ------------------------------------------------------------------
+         * Onset detection — "when does a drum actually get struck?"
+         *
+         * The old code detected kick and snare independently and then suppressed
+         * peaks with a 120 ms window per band. That had two consequences:
+         *   - two real beats 130-250 ms apart collapsed into ONE note, and the
+         *     surviving time belonged to whichever hit happened to be louder
+         *     (often the wrong instrument), and
+         *   - leaking energy between bands produced notes at times where no
+         *     drum sounded at all.
+         *
+         * Measured on the bundled tracks, 12-24% of the old chart's notes did
+         * not sit on any real attack. The fix is to find the attacks FIRST (on
+         * the broadband signal) and only then decide which drum caused them.
+         * ------------------------------------------------------------------ */
 
-          const hop = Math.round(sr * 0.005) // 5 ms -> precise drum timing
-          const frames = Math.floor(y.length / hop)
+        const hop = Math.round(sr * 0.005) // 5 ms -> precise drum timing
+        const hopSec = hop / sr
+
+        /** RMS envelope at the 5 ms hop. */
+        const envelopeOf = (signal) => {
+          const frames = Math.floor(signal.length / hop)
           const env = new Float32Array(frames)
           for (let i = 0; i < frames; i++) {
             let sum = 0
             const start = i * hop
-            for (let j = 0; j < hop; j++) sum += y[start + j] * y[start + j]
+            for (let j = 0; j < hop; j++) sum += signal[start + j] * signal[start + j]
             env[i] = Math.sqrt(sum / hop)
           }
-
-          const flux = new Float32Array(frames)
-          for (let i = 1; i < frames; i++) {
-            const diff = env[i] - env[i - 1]
-            flux[i] = diff > 0 ? diff : 0
-          }
-          return { flux, hopSec: hop / sr }
+          return env
         }
 
-        const low = bandFlux(0.02, 0.02) // kick
-        const mid = bandFlux(0.12, 0.2) // snare
-        const high = bandFlux(0.35, 0.6) // hats
+        /** RBJ biquad coefficients (band-pass / high-pass / low-pass). */
+        const biquad = (type, freq, q = 0.707) => {
+          const w0 = (2 * Math.PI * freq) / sr
+          const cos = Math.cos(w0)
+          const alpha = Math.sin(w0) / (2 * q)
+          let b0
+          let b1
+          let b2
+          if (type === 'highpass') {
+            b0 = (1 + cos) / 2
+            b1 = -(1 + cos)
+            b2 = (1 + cos) / 2
+          } else {
+            b0 = (1 - cos) / 2
+            b1 = 1 - cos
+            b2 = (1 - cos) / 2
+          }
+          const a0 = 1 + alpha
+          return {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: (-2 * cos) / a0,
+            a2: (1 - alpha) / a0,
+          }
+        }
 
-        // --- peak picking ------------------------------------------------
-        const pickPeaks = ({ flux, hopSec }, relThreshold, minGapSec) => {
-          let peak = 0
-          for (let i = 0; i < flux.length; i++) if (flux[i] > peak) peak = flux[i]
-          const threshold = peak * relThreshold
-          const minGap = Math.round(minGapSec / hopSec)
+        const applyBiquad = (input, c) => {
+          const out = new Float32Array(input.length)
+          let x1 = 0
+          let x2 = 0
+          let y1 = 0
+          let y2 = 0
+          for (let i = 0; i < input.length; i++) {
+            const x = input[i]
+            const y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2
+            x2 = x1
+            x1 = x
+            y2 = y1
+            y1 = y
+            out[i] = y
+          }
+          return out
+        }
+
+        // True band-pass = high-pass then low-pass. These isolate the drums far
+        // better than the old one-pole "difference of leaks" filters.
+        const bandEnvelope = (loHz, hiHz) =>
+          envelopeOf(applyBiquad(applyBiquad(mono, biquad('highpass', loHz)), biquad('lowpass', hiHz)))
+
+        /*
+         * The frequency ranges below were measured on the bundled tracks rather
+         * than guessed. Two of the ranges used previously were simply wrong:
+         *
+         *   kick  30-110 Hz   correct.
+         *   snare 150-400 Hz  the snare's body. The old 1200-5000 Hz range held
+         *                     almost nothing on these mixes (18 detections in a
+         *                     whole Oasis track), which is why real snares were
+         *                     missing notes.
+         *   hat   6.5-9 kHz   cymbal sizzle.
+         *
+         * A "rise" test in dB is used instead of a level test: a drum is a
+         * sudden jump in a band, and this separates real hits from vocals and
+         * piano, which sit in overlapping ranges but rarely jump 10 dB in 20 ms.
+         */
+        const kickEnv = bandEnvelope(30, 110)
+        const snareEnv = bandEnvelope(150, 400)
+        const hatEnv = bandEnvelope(6500, 9000)
+
+        const riseLag = Math.max(1, Math.round(0.02 / hopSec)) // 20 ms look-back
+        const dbRise = (env, i) =>
+          20 * Math.log10((env[i] + 1e-9) / (env[i - riseLag] + 1e-9))
+
+        /**
+         * Find hits in one band: local peaks that jump at least `minDb` within
+         * 20 ms and are loud enough to matter for this track.
+         */
+        const detectBand = (env, minDb, minLevel) => {
           const found = []
-
-          for (let i = 2; i < flux.length - 2; i++) {
-            const v = flux[i]
-            if (v < threshold) continue
-            if (v < flux[i - 1] || v < flux[i + 1]) continue
-
-            const last = found[found.length - 1]
-            if (last && i - last.index < minGap) {
-              if (v > last.strength) {
-                last.index = i
-                last.time = i * hopSec
-                last.strength = v
+          for (let i = riseLag + 2; i < env.length - 2; i++) {
+            if (env[i] < minLevel) continue
+            if (env[i] <= env[i - 1] || env[i] <= env[i + 1]) continue
+            if (dbRise(env, i) < minDb) continue
+            found.push({ index: i, time: i * hopSec, strength: env[i], rise: dbRise(env, i) })
+          }
+          // The same strike rings for a while; keep the strongest frame.
+          const merged = []
+          for (const hit of found) {
+            const last = merged[merged.length - 1]
+            if (last && hit.time - last.time < 0.06) {
+              if (hit.strength > last.strength) {
+                last.index = hit.index
+                last.time = hit.time
+                last.strength = hit.strength
+                last.rise = hit.rise
               }
               continue
             }
-            found.push({ index: i, time: i * hopSec, strength: v })
+            merged.push(hit)
           }
-          return found
+          return merged
         }
 
-        const kick = pickPeaks(low, 0.3, 0.12)
-        const snare = pickPeaks(mid, 0.3, 0.12)
-        const hats = pickPeaks(high, 0.35, 0.08)
+        // Reference levels so the thresholds scale with how loud the track's
+        // drums actually are (a quiet acoustic track still gets its hits).
+        const percentile = (env, p) => {
+          const sorted = Float32Array.from(env).sort()
+          return sorted[Math.floor(sorted.length * p)] || 0
+        }
+        const kickRef = percentile(kickEnv, 0.9)
+        const snareRef = percentile(snareEnv, 0.9)
+        const hatRef = percentile(hatEnv, 0.9)
 
-        // Kick + snare are the "hits the player should strike". Hats are too
-        // dense to be playable, so they only contribute during quiet moments.
-        const body = [...kick, ...snare].sort((a, b) => a.time - b.time)
+        const kickHits = detectBand(kickEnv, 10, Math.max(0.008, kickRef * 0.1))
+        const snareHits = detectBand(snareEnv, 10, Math.max(0.006, snareRef * 0.1))
+        const hatHits = useHats
+          ? detectBand(hatEnv, 9, Math.max(0.004, hatRef * 0.1))
+          : []
 
-        // Merge hits closer than 100 ms (they are the same physical hit).
+        /*
+         * Everything a player should strike: kick, snare, and (in HARD) hats.
+         * The time of each note is the exact frame the drum hit — it is never
+         * nudged towards a neighbour.
+         */
+        const hits = [
+          ...kickHits.map((h) => ({ ...h, type: 'kick' })),
+          ...snareHits.map((h) => ({ ...h, type: 'snare' })),
+          ...hatHits.map((h) => ({ ...h, type: 'hat' })),
+        ].sort((a, b) => a.time - b.time)
+
+        /* ------------------------------------------------------------------
+         * Build the chart.
+         *
+         * The surviving notes keep their EXACT detected time — a note is never
+         * nudged towards a neighbour. When two hits are too close to be played
+         * as separate notes, the weaker one is dropped instead.
+         * ------------------------------------------------------------------ */
+
+        // Hats are only detected in HARD (see hatHits above), so `hits` is
+        // already exactly the note pool for this difficulty.
+
+        // Merge hits that are the same physical strike (e.g. hat on top of a
+        // kick, or a kick and snare landing together): keep one note, at the
+        // stronger component's own time.
         const merged = []
-        for (const hit of body) {
+        for (const hit of hits) {
           const last = merged[merged.length - 1]
-          if (last && hit.time - last.time < 0.1) {
+          if (last && hit.time - last.time < mergeWindow) {
             if (hit.strength > last.strength) {
               last.time = hit.time
               last.strength = hit.strength
+              last.type = hit.type
             }
             continue
           }
-          merged.push({ time: hit.time, strength: hit.strength })
+          merged.push({ ...hit })
         }
 
-        // --- thin the chart so it stays playable ------------------------
-        // A 104 BPM song still has fast fills; anything below ~150 ms apart is
-        // physically un-hittable, so keep the strongest hit in each cluster.
-        const MIN_GAP = CONFIG.chartMinGap
+        // Thin out anything still too fast to play by DROPPING the weak hit.
         const chart = []
         for (const hit of merged) {
           const last = chart[chart.length - 1]
-          if (last && hit.time - last.time < MIN_GAP) {
-            if (hit.strength > last.strength) {
-              last.time = hit.time
-              last.strength = hit.strength
-            }
-            continue
-          }
-          chart.push({ time: hit.time, strength: hit.strength })
+          if (last && hit.time - last.time < minGap) continue
+          chart.push(hit)
         }
 
         // Drop a leading near-silent region so the first note is not 4 s away.
@@ -730,25 +909,33 @@ const beatDetector = {
           count: chart.length,
           firstNoteTime: firstNote,
           duration: audio.duration,
+          mode,
         }
 
-        this.chartCache.set(url, result)
+        this.chartCache.set(key, result)
         console.info(
-          `[cyber-runner] Drum chart: ${result.count} notes ` +
+          `[cyber-runner] Drum chart (${mode}): ${result.count} notes ` +
             `(${(result.count / (audio.duration / 60)).toFixed(0)}/min), first at ${firstNote.toFixed(2)}s`,
         )
         return result
       } catch (error) {
         console.warn('[cyber-runner] Drum chart failed; falling back to the beat grid.', error)
-        const fallback = { times: [], count: 0, firstNoteTime: 0, duration: 0, fallback: true }
-        this.chartCache.set(url, fallback)
+        const fallback = {
+          times: [],
+          count: 0,
+          firstNoteTime: 0,
+          duration: 0,
+          fallback: true,
+          mode,
+        }
+        this.chartCache.set(key, fallback)
         return fallback
       } finally {
-        this.chartBuilding.delete(url)
+        this.chartBuilding.delete(key)
       }
     })()
 
-    this.chartBuilding.set(url, job)
+    this.chartBuilding.set(key, job)
     return job
   },
 }
@@ -1425,7 +1612,14 @@ const songLibrary = {
 
   init() {
     this.bundled = [...CONFIG.songs]
-      .map((song) => ({ ...song, source: 'bundled', available: null }))
+      .map((song) => ({
+        ...song,
+        // Re-root the production path on whatever base we are served from, so
+        // the same catalogue works on Pages, `vite preview` and the dev server.
+        url: CONFIG.resolveAssetUrl(song.url),
+        source: 'bundled',
+        available: null,
+      }))
       .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
 
     this.selected = this.bundled[0] ?? null
@@ -1755,6 +1949,12 @@ const game = {
   recentLanes: [],
   /** The song object currently loaded (so RUN AGAIN replays the same track). */
   currentSong: null,
+  /**
+   * Selected difficulty ('easy' | 'hard'). Lives in the game state so RUN AGAIN
+   * and RESTART keep the same mode until the player changes it on the title
+   * screen. Only the chart density depends on it — timing and scoring do not.
+   */
+  difficulty: CONFIG.defaultDifficulty,
 
   reset() {
     obstacleManager.clear()
@@ -1804,10 +2004,11 @@ const game = {
       // before the music actually begins.
       audio.prime(target.url)
 
-      // Kick off analysis (cached per song after the first run). The drum chart
-      // is what actually drives note timing now.
+      // Kick off analysis (cached per (song, mode) after the first run). The
+      // drum chart is what actually drives note timing now.
+      const mode = beatDetector.resolveMode(this.difficulty)
       const beatPromise = beatDetector.detect(target.url)
-      const chartPromise = beatDetector.buildChart(target.url)
+      const chartPromise = beatDetector.buildChart(target.url, { difficulty: mode })
 
       // Show the play field behind the countdown.
       ui.startScreen.classList.add('hidden')
@@ -2241,6 +2442,14 @@ function init() {
   ui.quitButton.addEventListener('click', () => game.start())
   ui.menuButton.addEventListener('click', () => goToMainMenu())
 
+  // Difficulty toggle. It only changes which chart gets built — never timing or
+  // scoring — and the choice survives RUN AGAIN / RESTART / MAIN MENU.
+  for (const button of ui.difficultyButtons) {
+    button.addEventListener('click', () => {
+      setDifficulty(button.dataset.difficulty)
+    })
+  }
+  renderDifficulty()
   ui.pauseButton.addEventListener('click', () => game.pause())
   ui.resumeButton.addEventListener('click', () => game.resume())
 
@@ -2269,8 +2478,33 @@ function prefetchSelectedSong() {
   if (game.isPlaying) return
   // Skip files we already know are missing — probing them only spams errors.
   if (song.available === false) return
+  const mode = beatDetector.resolveMode(game.difficulty)
   beatDetector.detect(song.url).catch(() => {})
-  beatDetector.buildChart(song.url).catch(() => {})
+  // Only the selected mode's chart is warmed — the other mode builds on demand.
+  beatDetector.buildChart(song.url, { difficulty: mode }).catch(() => {})
+}
+
+/**
+ * Change the active difficulty and reflect it in the toggle. Charts are cached
+ * per (song, mode), so switching back and forth is always consistent.
+ */
+function setDifficulty(mode) {
+  const next = beatDetector.resolveMode(mode)
+  if (game.difficulty === next) return
+  game.difficulty = next
+  renderDifficulty()
+  // Warm the newly selected mode's chart for the current song.
+  prefetchSelectedSong()
+}
+
+/** Paint the EASY / HARD toggle from the current game state. */
+function renderDifficulty() {
+  // Keep the state valid even if it was set to something unknown.
+  game.difficulty = beatDetector.resolveMode(game.difficulty)
+  for (const button of ui.difficultyButtons) {
+    const active = button.dataset.difficulty === game.difficulty
+    button.setAttribute('aria-checked', active ? 'true' : 'false')
+  }
 }
 
 /**
@@ -2288,6 +2522,8 @@ function goToMainMenu() {
   songLibrary.selected = songLibrary.first()
   songLibrary.render()
   songLibrary.clearStatus()
+  // Keep the last chosen difficulty visible and active on the title screen.
+  renderDifficulty()
   ui.startScreen.classList.remove('hidden')
   ui.gameOver.classList.add('hidden')
   ui.pauseScreen.classList.add('hidden')
@@ -2313,8 +2549,9 @@ async function startSelectedSong() {
 
   songLibrary.stopPreview()
 
-  // Already analysed (cached) -> start instantly.
-  const cached = beatDetector.chartCache.has(song.url)
+  // Already analysed for THIS mode (cached) -> start instantly.
+  const mode = beatDetector.resolveMode(game.difficulty)
+  const cached = beatDetector.chartCache.has(beatDetector.chartKey(song.url, mode))
   if (!cached) {
     songLibrary.setStatus('ANALYSING… this can take a few seconds.', 'warn')
     ui.startButton.disabled = true
@@ -2369,11 +2606,15 @@ window.__cyberRunner = {
     }
     return best
   },
-  chartInfo() {
+  /** Chart stats for the current song. Pass a mode to inspect the other one. */
+  chartInfo(modeOverride) {
     const url = game.currentSong?.url
-    const c = url ? beatDetector.chartCache.get(url) : null
+    const mode = beatDetector.resolveMode(modeOverride ?? game.difficulty)
+    // Charts are cached per (mode, url) — read the one for the active mode.
+    const c = url ? beatDetector.chartCache.get(beatDetector.chartKey(url, mode)) : null
     return c
       ? {
+          mode,
           count: c.count,
           firstNoteTime: +c.firstNoteTime.toFixed(2),
           duration: +c.duration.toFixed(1),

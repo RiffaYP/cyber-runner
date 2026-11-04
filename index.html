@@ -85,6 +85,35 @@
           <p id="song-status" class="song-status" data-kind="info"></p>
         </div>
 
+        <!-- Difficulty: only the note density changes, never timing/scoring -->
+        <div
+          id="difficulty-picker"
+          class="segmented"
+          role="radiogroup"
+          aria-label="Difficulty"
+        >
+          <button
+            id="difficulty-easy"
+            type="button"
+            class="seg-btn"
+            data-difficulty="easy"
+            role="radio"
+            aria-checked="true"
+          >
+            EASY
+          </button>
+          <button
+            id="difficulty-hard"
+            type="button"
+            class="seg-btn"
+            data-difficulty="hard"
+            role="radio"
+            aria-checked="false"
+          >
+            HARD
+          </button>
+        </div>
+
         <button id="start-btn" type="button">START GAME</button>
 
         <div class="key-guide">

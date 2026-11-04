@@ -498,6 +498,70 @@ kbd {
 }
 
 /* ==========================================================================
+   DIFFICULTY PICKER  (start screen)
+   ========================================================================== */
+
+#difficulty-picker {
+  pointer-events: auto;
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin: 0.1rem 0 0.15rem;
+}
+
+/* Let the shared button look win on specificity, then restyle locally. */
+#ui #difficulty-picker .seg-btn {
+  min-width: clamp(6.2rem, 15vw, 8.4rem);
+  padding: 0.6rem 1.3rem;
+  font-size: clamp(0.58rem, 1.1vw, 0.72rem);
+  letter-spacing: 0.28em;
+  border-radius: 0.4rem;
+  color: var(--ink-dim);
+  background: rgba(255, 255, 255, 0.025);
+  border: 1.5px solid rgba(223, 246, 255, 0.18);
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+#ui #difficulty-picker .seg-btn:hover {
+  opacity: 1;
+  color: var(--ink);
+  background: rgba(47, 216, 255, 0.08);
+  border-color: rgba(47, 216, 255, 0.45);
+  box-shadow: 0 0 16px rgba(47, 216, 255, 0.14);
+}
+
+/* Active mode: filled neon fill + inner glow, unmistakably "on". */
+#ui #difficulty-picker .seg-btn[aria-checked='true'] {
+  opacity: 1;
+  color: #eaf9ff;
+  background: rgba(47, 216, 255, 0.2);
+  border-color: var(--lane-0);
+  box-shadow:
+    0 0 18px rgba(47, 216, 255, 0.35),
+    inset 0 0 14px rgba(47, 216, 255, 0.22);
+  text-shadow: 0 0 12px rgba(47, 216, 255, 0.55);
+}
+
+/* HARD gets a hot accent so the harder mode reads at a glance. */
+#ui #difficulty-picker .seg-btn[data-difficulty='hard']:hover {
+  color: #ffd7e6;
+  background: rgba(255, 92, 157, 0.1);
+  border-color: rgba(255, 92, 157, 0.5);
+  box-shadow: 0 0 16px rgba(255, 92, 157, 0.18);
+}
+
+#ui #difficulty-picker .seg-btn[data-difficulty='hard'][aria-checked='true'] {
+  color: #ffe3ee;
+  background: rgba(255, 92, 157, 0.22);
+  border-color: var(--lane-3);
+  box-shadow:
+    0 0 18px rgba(255, 92, 157, 0.38),
+    inset 0 0 14px rgba(255, 92, 157, 0.22);
+  text-shadow: 0 0 12px rgba(255, 92, 157, 0.6);
+}
+
+/* ==========================================================================
    GAME OVER
    ========================================================================== */
 
