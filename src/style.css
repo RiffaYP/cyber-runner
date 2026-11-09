@@ -239,10 +239,20 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 1.05rem;
   text-align: center;
+  /* env() keeps content clear of the notch / home bar in landscape. */
   padding: 2rem;
+  padding-top: calc(2rem + env(safe-area-inset-top));
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+  padding-left: calc(2rem + env(safe-area-inset-left));
+  padding-right: calc(2rem + env(safe-area-inset-right));
+  /* Content can be taller than the viewport (phones). Scroll instead of
+     clipping. `safe center` centers when it fits but keeps the top reachable
+     when it overflows (supported iOS 15+). */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  justify-content: safe center;
   background: radial-gradient(
     ellipse at 50% 55%,
     rgba(18, 30, 48, 0.55) 0%,
@@ -1156,6 +1166,12 @@ body.is-touch #app {
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* The start screen must scroll — re-enable vertical panning there. */
+body.is-touch #start-screen {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 body.is-touch #touch-zones {
