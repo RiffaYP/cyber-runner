@@ -24,20 +24,21 @@ html,
 body {
   width: 100%;
   height: 100%;
-  overflow: hidden;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---------- Canvas layer ---------- */
+/* Canvas layer handles its own overflow (prevents rubber-band during play). */
 #app {
   position: fixed;
   inset: 0;
   z-index: 0;
+  overflow: hidden;
 }
 
+/* ---------- Canvas layer ---------- */
 #app canvas {
   display: block;
   width: 100%;
