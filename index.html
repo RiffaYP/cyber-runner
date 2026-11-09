@@ -3,7 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/cyber-runner/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>CYBER RUNNER // 212 BPM</title>
   </head>
   <body>
@@ -38,6 +44,20 @@
         <div class="lane-key" data-lane="1"><span>2</span></div>
         <div class="lane-key" data-lane="2"><span>3</span></div>
         <div class="lane-key" data-lane="3"><span>4</span></div>
+      </div>
+
+      <!-- Touch zones (bottom quarter). Keyboard hints hidden on touch. -->
+      <div id="touch-zones" class="hidden" aria-hidden="true">
+        <div class="touch-zone" data-lane="0" aria-label="Lane 1"></div>
+        <div class="touch-zone" data-lane="1" aria-label="Lane 2"></div>
+        <div class="touch-zone" data-lane="2" aria-label="Lane 3"></div>
+        <div class="touch-zone" data-lane="3" aria-label="Lane 4"></div>
+      </div>
+
+      <!-- Portrait "rotate device" overlay for mobile -->
+      <div id="rotate-overlay" class="hidden" aria-live="polite">
+        <div class="rotate-icon"></div>
+        <p>ROTATE TO LANDSCAPE</p>
       </div>
 
       <!-- Judgement popup: PERFECT / GOOD / OK / BAD / MISS -->
@@ -151,6 +171,14 @@
               <button id="offset-reset" type="button" class="btn-small btn-ghost" title="Reset offset to 0">
                 0 ms
               </button>
+            </div>
+          </div>
+          <div class="mod-row">
+            <span class="mod-label">GRAPHICS</span>
+            <div id="quality-picker" class="segmented seg-small" role="radiogroup" aria-label="Graphics quality">
+              <button type="button" class="seg-btn" data-quality="auto" role="radio" aria-checked="true">AUTO</button>
+              <button type="button" class="seg-btn" data-quality="high" role="radio" aria-checked="false">HIGH</button>
+              <button type="button" class="seg-btn" data-quality="low" role="radio" aria-checked="false">LOW</button>
             </div>
           </div>
           <p class="mod-hint">

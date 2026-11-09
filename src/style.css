@@ -1143,3 +1143,110 @@ kbd {
     animation: none;
   }
 }
+
+/* ==========================================================================
+   TOUCH CONTROLS (mobile only — sees body.is-touch)
+   ========================================================================== */
+
+/* Prevent rubber-banding / double-tap zoom over the whole game. */
+body.is-touch,
+body.is-touch #ui,
+body.is-touch #app {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body.is-touch #touch-zones {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 26vh;
+  min-height: 110px;
+  display: flex;
+  pointer-events: none;
+}
+
+/* Only capture taps while a run is live, so the title screen / menus stay
+   clickable underneath the (invisible) zones. */
+body.is-touch.is-playing #touch-zones {
+  pointer-events: auto;
+}
+
+.touch-zone {
+  flex: 1;
+  position: relative;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.touch-zone + .touch-zone {
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Per-lane accent for a subtle rim on press. */
+.touch-zone[data-lane='0'] { --accent: var(--lane-0); }
+.touch-zone[data-lane='1'] { --accent: var(--lane-1); }
+.touch-zone[data-lane='2'] { --accent: var(--lane-2); }
+.touch-zone[data-lane='3'] { --accent: var(--lane-3); }
+
+.touch-zone:active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* On touch devices the number hints are dead weight — hide them, keep the
+   lane-key blocks as the press/hit feedback mirror. */
+body.is-touch .lane-key span {
+  display: none;
+}
+
+body.is-touch .key-guide {
+  display: none;
+}
+
+/* Compact HUD + smaller overflow on small screens. */
+body.is-touch #hud {
+  gap: 0.7rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.82em;
+}
+
+body.is-touch #lane-keys {
+  bottom: calc(26vh + 0.6rem);
+}
+
+body.is-touch #pause-btn {
+  top: auto;
+  bottom: calc(26vh + 0.6rem);
+}
+
+/* ---------- Rotate-to-landscape overlay ---------- */
+#rotate-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  background: var(--bg);
+  color: var(--ink);
+  letter-spacing: 0.14em;
+  font-size: 0.95rem;
+  pointer-events: auto;
+}
+
+.rotate-icon {
+  width: 46px;
+  height: 74px;
+  border: 2px solid var(--ink-dim);
+  border-radius: 8px;
+  animation: rotate-hint 1.6s ease-in-out infinite;
+}
+
+@keyframes rotate-hint {
+  0%, 40% { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(90deg); }
+}

@@ -5,6 +5,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 
+import { isMobile, prefersLandscape } from './device.js'
+import { initTouch } from './touch.js'
+
 /* ==========================================================================
    CONFIG
    ========================================================================== */
@@ -111,6 +114,12 @@ const CONFIG = {
    */
   audioOffset: 0,
   audioOffsetLimit: 0.2, // slider range is +/- 200 ms
+
+  /**
+   * Graphics quality. 'auto' resolves to 'low' on mobile and 'high' on desktop.
+   * Low: bloom off, pixelRatio 1. High: full bloom, pixelRatio up to 2.
+   */
+  graphicsQuality: 'auto',
 
   /*
    * Judgement thresholds (absolute timing error, in seconds).
@@ -325,6 +334,7 @@ const ui = {
 
   // Modifiers
   speedButtons: Array.from(document.querySelectorAll('[data-speed]')),
+  qualityButtons: Array.from(document.querySelectorAll('[data-quality]')),
   noFailButton: document.getElementById('mod-nofail'),
   mirrorButton: document.getElementById('mod-mirror'),
   offsetSlider: document.getElementById('offset-slider'),
@@ -366,6 +376,9 @@ const ui = {
   quitButton: document.getElementById('quit-btn'),
   menuButton: document.getElementById('menu-btn'),
 
+  touchZones: document.getElementById('touch-zones'),
+  rotateOverlay: document.getElementById('rotate-overlay'),
+
   /** Hide the title card (used by reset so a restart is seamless). */
   hideStartScreen() {
     this.startScreen.classList.add('hidden')
@@ -376,8 +389,26 @@ const ui = {
    RENDERER / SCENE / CAMERA
    ========================================================================== */
 
+/**
+ * Resolve the effective quality tier. 'auto' -> low on mobile, high elsewhere.
+ * 'low' disables bloom and caps pixel ratio at 1; everything else keeps bloom.
+ */
+function resolveQuality() {
+  const want = CONFIG.graphicsQuality
+  if (want === 'auto' || !want) return isMobile ? 'low' : 'high'
+  return want === 'low' ? 'low' : 'high'
+}
+
+function bloomEnabled() {
+  return resolveQuality() !== 'low'
+}
+
+function targetPixelRatio() {
+  return bloomEnabled() ? Math.min(window.devicePixelRatio, 2) : 1
+}
+
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.setPixelRatio(targetPixelRatio())
 renderer.setSize(window.innerWidth, window.innerHeight)
 // Exposure well below 1 keeps highlights from clipping to pure white,
 // which is what caused the previous "white blob" look.
@@ -1736,7 +1767,8 @@ const audio = {
       }
       this.el = new Audio(url)
       this.el.preload = 'auto'
-      this.el.loop = true
+      this.el.loop = false
+      this.el.addEventListener('ended', () => game.gameOver())
       this.url = url
     }
     return this.el
@@ -2368,6 +2400,7 @@ const game = {
       ui.pauseScreen.classList.add('hidden')
       ui.hud.classList.remove('hidden')
       ui.laneKeys.classList.remove('hidden')
+      document.body.classList.add('is-playing')
 
       // Wait for analysis to finish (instant after the first run) BEFORE the
       // countdown, so the countdown is a clean 3-2-1.
@@ -2452,6 +2485,7 @@ const game = {
     if (!this.isPlaying) return
     this.isPlaying = false
     this.isPaused = false
+    document.body.classList.remove('is-playing')
     ui.countdown.classList.add('hidden')
     songLibrary.stopPreview()
 
@@ -2762,10 +2796,23 @@ function onResize() {
   camera.aspect = width / height
   camera.updateProjectionMatrix()
 
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.setPixelRatio(targetPixelRatio())
   renderer.setSize(width, height)
   composer.setSize(width, height)
   bloomPass.setSize(width, height)
+  bloomPass.enabled = bloomEnabled()
+}
+
+/* Mobile: lock to landscape where supported, else show a rotate hint. */
+function applyOrientation() {
+  if (!isMobile) return
+
+  const portrait = window.innerHeight > window.innerWidth
+  ui.rotateOverlay.classList.toggle('hidden', !portrait)
+
+  if (prefersLandscape() && screen.orientation && screen.orientation.lock) {
+    screen.orientation.lock('landscape').catch(() => {})
+  }
 }
 
 /* ==========================================================================
@@ -2774,8 +2821,24 @@ function onResize() {
 
 function init() {
   input.init()
-  window.addEventListener('resize', onResize)
+  window.addEventListener('resize', () => {
+    onResize()
+    applyOrientation()
+  })
+  window.addEventListener('orientationchange', applyOrientation)
   onResize()
+  applyOrientation()
+
+  // Touch zones replace the keyboard on mobile.
+  if (isMobile) {
+    document.body.classList.add('is-touch')
+    ui.touchZones.classList.remove('hidden')
+    initTouch(ui.touchZones, {
+      pressLane: (lane) => input.pressLane(lane),
+      isPlaying: () => game.isPlaying && !game.isStarting,
+      isPaused: () => game.isPaused,
+    })
+  }
 
   songLibrary.init()
 
@@ -2833,6 +2896,9 @@ function init() {
   }
   ui.noFailButton.addEventListener('click', () => setNoFail(!MODIFIERS.noFail))
   ui.mirrorButton.addEventListener('click', () => setMirror(!MODIFIERS.mirror))
+  for (const button of ui.qualityButtons) {
+    button.addEventListener('click', () => setQuality(button.dataset.quality))
+  }
 
   // Audio latency calibration -------------------------------------------
   ui.offsetSlider.addEventListener('input', () => {
@@ -2931,6 +2997,15 @@ function setMirror(on) {
   saveSettings()
 }
 
+/** Change the graphics quality tier and re-apply it live. */
+const QUALITY_OPTIONS = ['auto', 'high', 'low']
+function setQuality(quality) {
+  CONFIG.graphicsQuality = QUALITY_OPTIONS.includes(quality) ? quality : 'auto'
+  onResize()
+  renderModifiers()
+  saveSettings()
+}
+
 /**
  * Set the audio latency offset (seconds). Applied live, so a running game
  * immediately judges against the corrected clock.
@@ -2961,6 +3036,10 @@ function renderModifiers() {
   ui.noFailButton.classList.toggle('is-on', MODIFIERS.noFail)
   ui.mirrorButton.setAttribute('aria-pressed', MODIFIERS.mirror ? 'true' : 'false')
   ui.mirrorButton.classList.toggle('is-on', MODIFIERS.mirror)
+  for (const button of ui.qualityButtons) {
+    const active = button.dataset.quality === CONFIG.graphicsQuality
+    button.setAttribute('aria-checked', active ? 'true' : 'false')
+  }
 }
 
 function saveSettings() {
@@ -2970,6 +3049,7 @@ function saveSettings() {
     noFail: MODIFIERS.noFail,
     mirror: MODIFIERS.mirror,
     difficulty: game.difficulty,
+    graphicsQuality: CONFIG.graphicsQuality,
   })
 }
 
@@ -2990,6 +3070,12 @@ function loadSettings() {
   MODIFIERS.speed = SPEED_OPTIONS.includes(speed) ? speed : 1
   MODIFIERS.noFail = settings.noFail === true
   MODIFIERS.mirror = settings.mirror === true
+
+  const q = settings.graphicsQuality
+  CONFIG.graphicsQuality = QUALITY_OPTIONS.includes(q) ? q : 'auto'
+  // Re-apply the restored quality to the renderer / bloom.
+  onResize()
+
   renderModifiers()
 
   if (settings.difficulty) {
@@ -3081,6 +3167,7 @@ function goToMainMenu() {
   songLibrary.stopPreview()
   game.isPlaying = false
   game.isPaused = false
+  document.body.classList.remove('is-playing')
   rhythm.stop()
   audio.pause()
   game.currentSong = null
