@@ -1158,20 +1158,14 @@ kbd {
    TOUCH CONTROLS (mobile only — sees body.is-touch)
    ========================================================================== */
 
-/* Prevent rubber-banding / double-tap zoom over the whole game. */
-body.is-touch,
-body.is-touch #ui,
-body.is-touch #app {
+/* Prevent rubber-banding / double-tap zoom over the canvas + touch zones only.
+   NOT on #ui or body — that would block scrolling on the start screen. */
+body.is-touch #app,
+body.is-touch #touch-zones {
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-}
-
-/* The start screen must scroll — re-enable vertical panning there. */
-body.is-touch #start-screen {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
 }
 
 body.is-touch #touch-zones {
@@ -1230,6 +1224,8 @@ body.is-touch #hud {
 
 body.is-touch #lane-keys {
   bottom: calc(26vh + 0.6rem);
+  /* Wider gap on mobile so keys don't feel cramped. */
+  gap: clamp(0.9rem, 3vw, 1.4rem);
 }
 
 body.is-touch #pause-btn {

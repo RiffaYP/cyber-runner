@@ -2412,13 +2412,14 @@ const game = {
       this.reset()
 
       // 3 - 2 - 1, in silence. The player can already move the paddle.
-      await runCountdown()
-
-      // Now start everything together: music, chart and scoring.
+      // Start audio NOW (still inside user gesture) so it doesn't get blocked.
+      // We play silently during countdown; the real playback continues from here.
       rhythm.reset()
       this.isPlaying = true
       ui.pauseButton.classList.remove('hidden')
       audio.startFromBeginning(target.url)
+
+      await runCountdown()
     } finally {
       // Always release the lock, even if analysis threw — otherwise the game
       // could never be started again.
