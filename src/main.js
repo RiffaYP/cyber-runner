@@ -2617,6 +2617,7 @@ const game = {
     rhythm.stop()
     input.releaseAll()
 
+    document.body.classList.add('is-paused')
     ui.pauseScreen.classList.remove('hidden')
     ui.pauseButton.classList.add('hidden')
     ui.hud.classList.add('hidden')
@@ -2632,6 +2633,7 @@ const game = {
     this.rebaseRhythm()
     audio.resume()
 
+    document.body.classList.remove('is-paused')
     ui.pauseScreen.classList.add('hidden')
     ui.pauseButton.classList.remove('hidden')
     ui.hud.classList.remove('hidden')

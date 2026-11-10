@@ -1225,6 +1225,10 @@ body.is-touch.is-playing #touch-zones {
   pointer-events: auto;
 }
 
+body.is-paused #touch-zones {
+  display: none;
+}
+
 .touch-zone {
   flex: 1;
   position: relative;
