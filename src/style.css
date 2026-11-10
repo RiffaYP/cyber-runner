@@ -1329,7 +1329,8 @@ body.is-touch #lane-keys {
   display: none;
 }
 
-body.is-touch .lane-key span {
+/* Show numbers inside touch zones, hide only in floating lane-keys */
+body.is-touch #lane-keys .lane-key span {
   display: none;
 }
 
