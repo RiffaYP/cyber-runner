@@ -1356,13 +1356,13 @@ const noteGeometry = new THREE.BoxGeometry(
 noteGeometry.userData.shared = true
 
 // One emissive material per lane colour, shared across all notes.
-const noteMaterials = COLORS.lanes.map((hex) => {
+const noteMaterials = COLORS.lanes.map((hex, i) => {
+  // Lane 3 (pink/magenta) has lower luminance; boost emissive so it blooms like others
+  const isPink = i === 3
   const material = new THREE.MeshStandardMaterial({
-    // Dark base + strong emissive = saturated colour that glows without
-    // clipping to white.
     color: new THREE.Color(hex).multiplyScalar(0.32),
     emissive: hex,
-    emissiveIntensity: 1.25,
+    emissiveIntensity: isPink ? 1.8 : 1.25,
     metalness: 0.1,
     roughness: 0.6,
     transparent: true,
