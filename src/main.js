@@ -85,10 +85,11 @@ const CONFIG = {
 
   // Notes
   noteSize: 1.7,
-  spawnZ: -78,
+  spawnZ: -95,
   despawnZ: 10,
   // Speed derived from BPM so notes feel tied to the music:
   //   at 212 BPM a note covers ~1 lane-length per beat on screen.
+  //   Increased spawn distance gives ~3.2s approach (11 beats) for comfort.
   noteSpeed: 30,
 
   // The hit line sits just in front of the camera-facing player plane.

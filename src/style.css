@@ -97,7 +97,7 @@ body {
 .hud-label {
   font-size: clamp(0.5rem, 0.85vw, 0.62rem);
   letter-spacing: 0.28em;
-  color: var(--ink-faint);
+  color: var(--ink-dim);
 }
 
 .hud-value {
@@ -106,7 +106,6 @@ body {
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
-  /* Much softer than before — a whisper of glow, not a flare. */
   text-shadow: 0 0 12px rgba(120, 220, 255, 0.35);
   transition: color 0.25s ease;
 }
@@ -133,6 +132,22 @@ body {
 #beat.hud-value {
   color: var(--lane-0);
   text-shadow: 0 0 12px rgba(47, 216, 255, 0.32);
+}
+
+/* Mobile HUD: smaller, higher contrast, tighter */
+body.is-touch #hud {
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.78em;
+}
+
+body.is-touch .hud-label {
+  color: var(--ink-dim);
+  font-size: clamp(0.45rem, 0.8vw, 0.58rem);
+}
+
+body.is-touch .hud-value {
+  font-size: clamp(0.9rem, 1.8vw, 1.25rem);
 }
 
 /* ==========================================================================
@@ -1166,6 +1181,7 @@ kbd {
 
 /* ==========================================================================
    TOUCH CONTROLS (mobile only — sees body.is-touch)
+   Taller zones (38vh), embedded lane keys, per-lane glow, ripple feedback
    ========================================================================== */
 
 /* Prevent rubber-banding / double-tap zoom over the canvas + touch zones only.
@@ -1183,14 +1199,27 @@ body.is-touch #touch-zones {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 26vh;
-  min-height: 110px;
+  height: 38vh;
+  min-height: 160px;
+  max-height: 280px;
   display: flex;
   pointer-events: none;
+  z-index: 20;
 }
 
-/* Only capture taps while a run is live, so the title screen / menus stay
-   clickable underneath the (invisible) zones. */
+/* Gradient fade above touch zones so notes don't vanish under fingers */
+body.is-touch #touch-zones::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 35%;
+  background: linear-gradient(to bottom, transparent 0%, var(--bg) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
 body.is-touch.is-playing #touch-zones {
   pointer-events: auto;
 }
@@ -1198,25 +1227,87 @@ body.is-touch.is-playing #touch-zones {
 .touch-zone {
   flex: 1;
   position: relative;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-bottom: 0.6rem;
 }
 
 .touch-zone + .touch-zone {
-  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-/* Per-lane accent for a subtle rim on press. */
+/* Per-lane accent */
 .touch-zone[data-lane='0'] { --accent: var(--lane-0); }
 .touch-zone[data-lane='1'] { --accent: var(--lane-1); }
 .touch-zone[data-lane='2'] { --accent: var(--lane-2); }
 .touch-zone[data-lane='3'] { --accent: var(--lane-3); }
 
-.touch-zone:active {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+/* Subtle lane tint at rest */
+.touch-zone::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 60%);
+  pointer-events: none;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
 }
 
-/* On touch devices the number hints are dead weight — hide them, keep the
-   lane-key blocks as the press/hit feedback mirror. */
+/* Active press: bright glow */
+.touch-zone:active::after,
+.touch-zone.pressed::after {
+  opacity: 1;
+  background: linear-gradient(to top, color-mix(in srgb, var(--accent) 35%, transparent) 0%, transparent 50%);
+}
+
+.touch-zone:active,
+.touch-zone.pressed {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* Ripple effect on tap */
+.touch-zone::before {
+  content: '';
+  position: absolute;
+  bottom: 0.6rem;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 60%, white);
+  transform: translateX(-50%) scale(0);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+  transition: width 0.12s ease, height 0.12s ease, opacity 0.12s ease, transform 0.12s ease;
+}
+
+.touch-zone.tapped::before {
+  width: 120px;
+  height: 120px;
+  opacity: 0.5;
+  transform: translateX(-50%) scale(1);
+}
+
+/* Lane key INSIDE touch zone — aligned with 3D lane above */
+.touch-zone .lane-key {
+  width: 80%;
+  max-width: 72px;
+  height: clamp(2.2rem, 5vw, 3.2rem);
+  margin: 0 auto;
+  border-radius: 0.5rem;
+  border-width: 2px;
+  font-size: clamp(0.85rem, 1.8vw, 1.15rem);
+  box-shadow: none;
+}
+
+/* Hide the floating lane-keys on mobile since they're now in touch zones */
+body.is-touch #lane-keys {
+  display: none;
+}
+
 body.is-touch .lane-key span {
   display: none;
 }
@@ -1225,22 +1316,11 @@ body.is-touch .key-guide {
   display: none;
 }
 
-/* Compact HUD + smaller overflow on small screens. */
-body.is-touch #hud {
-  gap: 0.7rem;
-  padding: 0.6rem 0.8rem;
-  font-size: 0.82em;
-}
-
-body.is-touch #lane-keys {
-  bottom: calc(26vh + 0.6rem);
-  /* Wider gap on mobile so keys don't feel cramped. */
-  gap: clamp(0.9rem, 3vw, 1.4rem);
-}
-
+/* Mobile pause button repositioned */
 body.is-touch #pause-btn {
   top: auto;
-  bottom: calc(26vh + 0.6rem);
+  bottom: calc(38vh + 0.8rem);
+  right: 1rem;
 }
 
 /* ---------- Rotate-to-landscape overlay ---------- */
