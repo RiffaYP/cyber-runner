@@ -28,6 +28,7 @@ body {
   color: var(--ink);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
+  overflow: auto;
 }
 
 /* Canvas layer handles its own overflow (prevents rubber-band during play). */
@@ -52,6 +53,7 @@ body {
   z-index: 10;
   pointer-events: none; /* let clicks fall through to the canvas */
   user-select: none;
+  touch-action: manipulation;
 }
 
 #ui button {
@@ -259,6 +261,9 @@ body {
     rgba(18, 30, 48, 0.55) 0%,
     rgba(5, 7, 13, 0.93) 68%
   );
+  /* Ensure scrolling works even when #ui fixed overlay is present */
+  touch-action: pan-y;
+  pointer-events: auto;
 }
 
 .title {
@@ -810,6 +815,10 @@ kbd {
     rgba(5, 7, 13, 0.97) 66%
   );
   backdrop-filter: blur(2px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  pointer-events: auto;
 }
 
 .over-title {
