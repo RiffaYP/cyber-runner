@@ -84,7 +84,7 @@ const CONFIG = {
   gridScrollSpeed: 30, // world-units / second (purely visual)
 
   // Notes
-  noteSize: 1.7,
+  noteSize: 2.6,
   spawnZ: -95,
   despawnZ: 10,
   // Speed derived from BPM so notes feel tied to the music:
