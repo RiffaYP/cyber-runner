@@ -483,20 +483,20 @@ scene.add(grid)
 const laneGroup = new THREE.Group()
 scene.add(laneGroup)
 
-const laneCenter = (index) =>
+let laneCenter = (index) =>
   (index - (CONFIG.laneCount - 1) / 2) * CONFIG.laneWidth
 
-const LANE_HALF = (CONFIG.laneCount * CONFIG.laneWidth) / 2
+let LANE_HALF = (CONFIG.laneCount * CONFIG.laneWidth) / 2
 const RAIL_LENGTH = 130
 const RAIL_FAR = -RAIL_LENGTH + 8
 
-// Two outer rails plus one divider between each pair of lanes.
-const railXs = [-LANE_HALF]
+let railXs = [-LANE_HALF]
 for (let i = 0; i < CONFIG.laneCount - 1; i++) {
   railXs.push(-LANE_HALF + (i + 1) * CONFIG.laneWidth)
 }
 railXs.push(LANE_HALF)
 
+const railLines = []
 for (const x of railXs) {
   const rail = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([
@@ -512,11 +512,10 @@ for (const x of railXs) {
     }),
   )
   laneGroup.add(rail)
+  railLines.push(rail)
 }
 
 // One soft "beam" quad per lane so each lane reads as a distinct strip.
-// The strip runs from the far horizon all the way past the camera so it never
-// appears to "cut off" at the bottom of the screen.
 const BEAM_NEAR = 14
 const BEAM_FAR = RAIL_FAR
 const BEAM_LENGTH = BEAM_NEAR - BEAM_FAR
@@ -541,7 +540,7 @@ for (let i = 0; i < CONFIG.laneCount; i++) {
 }
 
 /* ---------- The hit line (where notes must be struck) ---------- */
-const HIT_LINE_WIDTH = LANE_HALF * 2 + 1.2
+let HIT_LINE_WIDTH = LANE_HALF * 2 + 1.2
 
 const hitLineMaterial = new THREE.MeshBasicMaterial({
   color: 0xffffff,
@@ -583,8 +582,8 @@ scene.add(player)
 
 // The "catcher" is a flat glowing paddle that sits on the hit line and slides
 // between lanes, Guitar Hero style.
-const paddleWidth = CONFIG.laneWidth * 0.9
-const PADDLE_LENGTH = 1.5 // along Z, so it reads as a landing pad
+let paddleWidth = CONFIG.laneWidth * 0.9
+const PADDLE_LENGTH = 1.5
 
 const paddlePadGeo = new THREE.PlaneGeometry(paddleWidth, PADDLE_LENGTH)
 const paddleMaterial = new THREE.MeshBasicMaterial({
@@ -623,7 +622,74 @@ strikeMarker.rotation.x = -Math.PI / 2
 strikeMarker.position.set(0, 0.008, 0)
 player.add(strikeMarker)
 
-const laneToX = laneCenter
+let laneToX = laneCenter
+
+/** Rebuild all lane-dependent geometry when laneWidth changes (mobile rotate/resize). */
+function updateLaneGeometry() {
+  laneCenter = (index) =>
+    (index - (CONFIG.laneCount - 1) / 2) * CONFIG.laneWidth
+
+  LANE_HALF = (CONFIG.laneCount * CONFIG.laneWidth) / 2
+
+  // Rebuild rails
+  railXs = [-LANE_HALF]
+  for (let i = 0; i < CONFIG.laneCount - 1; i++) {
+    railXs.push(-LANE_HALF + (i + 1) * CONFIG.laneWidth)
+  }
+  railXs.push(LANE_HALF)
+
+  // Dispose old rail geometries
+  for (const rail of railLines) {
+    laneGroup.remove(rail)
+    rail.geometry.dispose()
+  }
+  railLines.length = 0
+
+  for (const x of railXs) {
+    const rail = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(x, 0.01, RAIL_FAR),
+        new THREE.Vector3(x, 0.01, 6),
+      ]),
+      new THREE.LineBasicMaterial({
+        color: 0x7fb6d9,
+        transparent: true,
+        opacity: 0.16,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    )
+    laneGroup.add(rail)
+    railLines.push(rail)
+  }
+
+  // Update lane beams
+  for (let i = 0; i < CONFIG.laneCount; i++) {
+    const beam = laneBeams[i]
+    beam.geometry.dispose()
+    beam.geometry = new THREE.PlaneGeometry(CONFIG.laneWidth * 0.9, BEAM_LENGTH)
+    beam.position.set(laneCenter(i), 0.004, (BEAM_NEAR + BEAM_FAR) / 2)
+  }
+
+  // Update hit line width
+  HIT_LINE_WIDTH = LANE_HALF * 2 + 1.2
+  hitLine.geometry.dispose()
+  hitLine.geometry = new THREE.PlaneGeometry(HIT_LINE_WIDTH, 0.16)
+  hitEcho.geometry.dispose()
+  hitEcho.geometry = new THREE.PlaneGeometry(HIT_LINE_WIDTH * 0.98, 0.07)
+
+  // Update player paddle
+  paddleWidth = CONFIG.laneWidth * 0.9
+  paddlePad.geometry.dispose()
+  paddlePad.geometry = new THREE.PlaneGeometry(paddleWidth, PADDLE_LENGTH)
+  paddleRing.geometry.dispose()
+  paddleRing.geometry = new THREE.EdgesGeometry(paddlePad.geometry)
+  strikeMarker.geometry.dispose()
+  strikeMarker.geometry = new THREE.PlaneGeometry(paddleWidth * 0.94, 0.16)
+
+  // Update laneToX reference for obstacle spawning
+  laneToX = laneCenter
+}
 
 /* ==========================================================================
    ANALYSIS PROGRESS / CANCELLATION
@@ -2798,6 +2864,23 @@ function tick(timestamp) {
 function onResize() {
   const width = window.innerWidth
   const height = window.innerHeight
+
+  // Mobile landscape: wider FOV + wider lanes to fill screen
+  const wasMobileLandscape = CONFIG.laneWidth > 2.5
+  const isMobileLandscape = isMobile && width > height
+
+  if (isMobileLandscape) {
+    camera.fov = 68
+    CONFIG.laneWidth = 3.6
+  } else {
+    camera.fov = 52
+    CONFIG.laneWidth = 2.35
+  }
+
+  // Rebuild lane geometry if mobile/landscape state changed
+  if (wasMobileLandscape !== isMobileLandscape) {
+    updateLaneGeometry()
+  }
 
   camera.aspect = width / height
   camera.updateProjectionMatrix()

@@ -1220,19 +1220,6 @@ body.is-touch #touch-zones {
   z-index: 20;
 }
 
-/* Gradient fade above touch zones — lighter, shorter so notes stay visible */
-body.is-touch #touch-zones::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 20%;
-  background: linear-gradient(to bottom, transparent 0%, var(--bg) 80%);
-  pointer-events: none;
-  z-index: 1;
-}
-
 body.is-touch.is-playing #touch-zones {
   pointer-events: auto;
 }
@@ -1262,22 +1249,22 @@ body.is-touch.is-playing #touch-zones {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, var(--accent-tint) 0%, transparent 60%);
+  background: linear-gradient(to top, var(--accent-tint) 0%, transparent 50%);
   pointer-events: none;
-  opacity: 0.5;
+  opacity: 0.25;
   transition: opacity 0.15s ease;
 }
 
 /* Active press: bright glow */
 .touch-zone:active::after,
 .touch-zone.pressed::after {
-  opacity: 1;
-  background: linear-gradient(to top, var(--accent-glow) 0%, transparent 50%);
+  opacity: 0.6;
+  background: linear-gradient(to top, var(--accent-glow) 0%, transparent 40%);
 }
 
 .touch-zone:active,
 .touch-zone.pressed {
-  background: var(--accent-tint);
+  background: transparent;
 }
 
 /* Ripple effect on tap — using fallback variable */
