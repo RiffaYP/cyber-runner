@@ -1357,12 +1357,12 @@ noteGeometry.userData.shared = true
 
 // One emissive material per lane colour, shared across all notes.
 const noteMaterials = COLORS.lanes.map((hex, i) => {
-  // Lane 3 (pink/magenta) has lower luminance; boost emissive so it blooms like others
+  // Lane 3 (pink/magenta) has lower luminance; boost so it blooms like others
   const isPink = i === 3
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(hex).multiplyScalar(0.32),
+    color: new THREE.Color(hex).multiplyScalar(isPink ? 0.6 : 0.32),
     emissive: hex,
-    emissiveIntensity: isPink ? 1.8 : 1.25,
+    emissiveIntensity: isPink ? 2.5 : 1.25,
     metalness: 0.1,
     roughness: 0.6,
     transparent: true,
