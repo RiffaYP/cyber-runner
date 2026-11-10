@@ -1350,13 +1350,18 @@ const noteGeometry = new THREE.BoxGeometry(
 noteGeometry.userData.shared = true
 
 // One emissive material per lane colour, shared across all notes.
+// Per-lane tuning so all 4 lanes glow equally (luminance differs per hue)
 const noteMaterials = COLORS.lanes.map((hex, i) => {
-  // Lane 3 (pink/magenta) has lower luminance; boost so it blooms like others
-  const isPink = i === 3
+  const params = [
+    { colorMul: 0.32, emissive: 1.35 }, // lane 0: cyan - lower luminance
+    { colorMul: 0.28, emissive: 1.10 }, // lane 1: green - good luminance
+    { colorMul: 0.28, emissive: 1.10 }, // lane 2: amber - good luminance
+    { colorMul: 0.50, emissive: 1.90 }, // lane 3: pink - lower luminance
+  ][i]
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(hex).multiplyScalar(isPink ? 0.5 : 0.28),
+    color: new THREE.Color(hex).multiplyScalar(params.colorMul),
     emissive: hex,
-    emissiveIntensity: isPink ? 1.9 : 1.1,
+    emissiveIntensity: params.emissive,
     metalness: 0.1,
     roughness: 0.6,
     transparent: true,
