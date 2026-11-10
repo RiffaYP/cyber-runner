@@ -1356,7 +1356,7 @@ const noteMaterials = COLORS.lanes.map((hex, i) => {
     { colorMul: 0.32, emissive: 1.35 }, // lane 0: cyan - lower luminance
     { colorMul: 0.28, emissive: 1.10 }, // lane 1: green - good luminance
     { colorMul: 0.28, emissive: 1.10 }, // lane 2: amber - good luminance
-    { colorMul: 0.50, emissive: 1.90 }, // lane 3: pink - lower luminance
+    { colorMul: 0.55, emissive: 2.20 }, // lane 3: pink - lower luminance
   ][i]
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(hex).multiplyScalar(params.colorMul),
