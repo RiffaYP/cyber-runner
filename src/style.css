@@ -1216,12 +1216,13 @@ body.is-touch #touch-zones {
   height: 38vh;
   min-height: 160px;
   max-height: 280px;
-  display: flex;
+  display: none;
   pointer-events: none;
   z-index: 20;
 }
 
 body.is-touch.is-playing #touch-zones {
+  display: flex;
   pointer-events: auto;
 }
 
