@@ -6,10 +6,21 @@
   --lane-3: #ff5c9d;
 
   --ink: #dff6ff;
-  --ink-dim: rgba(223, 246, 255, 0.55);
-  --ink-faint: rgba(223, 246, 255, 0.28);
+  --ink-dim: rgba(223, 246, 255, 0.75);
+  --ink-faint: rgba(223, 246, 255, 0.35);
   --bg: #05070d;
   --panel: rgba(10, 16, 28, 0.72);
+
+  /* Fallback lane tints for browsers without color-mix() support */
+  --lane-0-tint: rgba(47, 216, 255, 0.15);
+  --lane-1-tint: rgba(77, 255, 158, 0.15);
+  --lane-2-tint: rgba(255, 196, 67, 0.15);
+  --lane-3-tint: rgba(255, 92, 157, 0.15);
+
+  --lane-0-glow: rgba(47, 216, 255, 0.4);
+  --lane-1-glow: rgba(77, 255, 158, 0.4);
+  --lane-2-glow: rgba(255, 196, 67, 0.4);
+  --lane-3-glow: rgba(255, 92, 157, 0.4);
 
   --font: 'Courier New', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -142,12 +153,14 @@ body.is-touch #hud {
 }
 
 body.is-touch .hud-label {
-  color: var(--ink-dim);
-  font-size: clamp(0.45rem, 0.8vw, 0.58rem);
+  color: var(--ink);
+  font-size: clamp(0.5rem, 0.9vw, 0.65rem);
+  font-weight: 600;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
 }
 
 body.is-touch .hud-value {
-  font-size: clamp(0.9rem, 1.8vw, 1.25rem);
+  font-size: clamp(0.95rem, 2vw, 1.3rem);
 }
 
 /* ==========================================================================
@@ -1207,15 +1220,15 @@ body.is-touch #touch-zones {
   z-index: 20;
 }
 
-/* Gradient fade above touch zones so notes don't vanish under fingers */
+/* Gradient fade above touch zones — lighter, shorter so notes stay visible */
 body.is-touch #touch-zones::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 35%;
-  background: linear-gradient(to bottom, transparent 0%, var(--bg) 100%);
+  height: 20%;
+  background: linear-gradient(to bottom, transparent 0%, var(--bg) 80%);
   pointer-events: none;
   z-index: 1;
 }
@@ -1227,7 +1240,7 @@ body.is-touch.is-playing #touch-zones {
 .touch-zone {
   flex: 1;
   position: relative;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -1235,23 +1248,23 @@ body.is-touch.is-playing #touch-zones {
 }
 
 .touch-zone + .touch-zone {
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Per-lane accent */
-.touch-zone[data-lane='0'] { --accent: var(--lane-0); }
-.touch-zone[data-lane='1'] { --accent: var(--lane-1); }
-.touch-zone[data-lane='2'] { --accent: var(--lane-2); }
-.touch-zone[data-lane='3'] { --accent: var(--lane-3); }
+/* Per-lane accent using fallback variables (no color-mix for iOS Safari compat) */
+.touch-zone[data-lane='0'] { --accent: var(--lane-0); --accent-tint: var(--lane-0-tint); --accent-glow: var(--lane-0-glow); }
+.touch-zone[data-lane='1'] { --accent: var(--lane-1); --accent-tint: var(--lane-1-tint); --accent-glow: var(--lane-1-glow); }
+.touch-zone[data-lane='2'] { --accent: var(--lane-2); --accent-tint: var(--lane-2-tint); --accent-glow: var(--lane-2-glow); }
+.touch-zone[data-lane='3'] { --accent: var(--lane-3); --accent-tint: var(--lane-3-tint); --accent-glow: var(--lane-3-glow); }
 
-/* Subtle lane tint at rest */
+/* Subtle lane tint at rest — using fallback variable */
 .touch-zone::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 60%);
+  background: linear-gradient(to top, var(--accent-tint) 0%, transparent 60%);
   pointer-events: none;
-  opacity: 0.6;
+  opacity: 0.5;
   transition: opacity 0.15s ease;
 }
 
@@ -1259,15 +1272,15 @@ body.is-touch.is-playing #touch-zones {
 .touch-zone:active::after,
 .touch-zone.pressed::after {
   opacity: 1;
-  background: linear-gradient(to top, color-mix(in srgb, var(--accent) 35%, transparent) 0%, transparent 50%);
+  background: linear-gradient(to top, var(--accent-glow) 0%, transparent 50%);
 }
 
 .touch-zone:active,
 .touch-zone.pressed {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--accent-tint);
 }
 
-/* Ripple effect on tap */
+/* Ripple effect on tap — using fallback variable */
 .touch-zone::before {
   content: '';
   position: absolute;
@@ -1276,7 +1289,7 @@ body.is-touch.is-playing #touch-zones {
   width: 0;
   height: 0;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 60%, white);
+  background: var(--accent-glow);
   transform: translateX(-50%) scale(0);
   opacity: 0;
   pointer-events: none;
@@ -1291,16 +1304,34 @@ body.is-touch.is-playing #touch-zones {
   transform: translateX(-50%) scale(1);
 }
 
-/* Lane key INSIDE touch zone — aligned with 3D lane above */
+/* Lane key INSIDE touch zone — aligned with 3D lane above, more visible */
 .touch-zone .lane-key {
-  width: 80%;
-  max-width: 72px;
-  height: clamp(2.2rem, 5vw, 3.2rem);
-  margin: 0 auto;
+  width: 85%;
+  max-width: 76px;
+  height: clamp(2.4rem, 5.5vw, 3.5rem);
+  margin: 0 auto 0.4rem;
   border-radius: 0.5rem;
   border-width: 2px;
-  font-size: clamp(0.85rem, 1.8vw, 1.15rem);
-  box-shadow: none;
+  font-size: clamp(0.95rem, 2vw, 1.25rem);
+  font-weight: 700;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Per-lane border color for embedded lane keys */
+.touch-zone[data-lane='0'] .lane-key { border-color: var(--lane-0); }
+.touch-zone[data-lane='1'] .lane-key { border-color: var(--lane-1); }
+.touch-zone[data-lane='2'] .lane-key { border-color: var(--lane-2); }
+.touch-zone[data-lane='3'] .lane-key { border-color: var(--lane-3); }
+
+/* Active state for embedded lane keys */
+.touch-zone .lane-key.active {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 16px var(--accent-glow), inset 0 0 8px var(--accent-glow);
+  transform: translateY(2px) scale(0.97);
 }
 
 /* Hide the floating lane-keys on mobile since they're now in touch zones */
