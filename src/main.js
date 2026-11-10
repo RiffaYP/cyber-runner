@@ -454,9 +454,9 @@ composer.addPass(renderPass)
  */
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.42,
-  0.42,
-  0.62,
+  0.35,
+  0.4,
+  0.68,
 )
 composer.addPass(bloomPass)
 
@@ -1360,13 +1360,13 @@ const noteMaterials = COLORS.lanes.map((hex, i) => {
   // Lane 3 (pink/magenta) has lower luminance; boost so it blooms like others
   const isPink = i === 3
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(hex).multiplyScalar(isPink ? 0.6 : 0.32),
+    color: new THREE.Color(hex).multiplyScalar(isPink ? 0.45 : 0.22),
     emissive: hex,
-    emissiveIntensity: isPink ? 2.5 : 1.25,
+    emissiveIntensity: isPink ? 1.6 : 0.85,
     metalness: 0.1,
     roughness: 0.6,
     transparent: true,
-    opacity: 0.97,
+    opacity: 0.95,
   })
   material.userData.shared = true
   return material
