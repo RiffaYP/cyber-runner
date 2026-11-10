@@ -390,22 +390,16 @@ const ui = {
    RENDERER / SCENE / CAMERA
    ========================================================================== */
 
-/**
- * Resolve the effective quality tier. 'auto' -> low on mobile, high elsewhere.
- * 'low' disables bloom and caps pixel ratio at 1; everything else keeps bloom.
- */
 function resolveQuality() {
-  const want = CONFIG.graphicsQuality
-  if (want === 'auto' || !want) return isMobile ? 'low' : 'high'
-  return want === 'low' ? 'low' : 'high'
+  return 'high'
 }
 
 function bloomEnabled() {
-  return resolveQuality() !== 'low'
+  return true
 }
 
 function targetPixelRatio() {
-  return bloomEnabled() ? Math.min(window.devicePixelRatio, 2) : 1
+  return Math.min(window.devicePixelRatio, 2)
 }
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
@@ -454,9 +448,9 @@ composer.addPass(renderPass)
  */
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.35,
-  0.4,
-  0.68,
+  0.38,
+  0.42,
+  0.65,
 )
 composer.addPass(bloomPass)
 
@@ -1360,9 +1354,9 @@ const noteMaterials = COLORS.lanes.map((hex, i) => {
   // Lane 3 (pink/magenta) has lower luminance; boost so it blooms like others
   const isPink = i === 3
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(hex).multiplyScalar(isPink ? 0.45 : 0.22),
+    color: new THREE.Color(hex).multiplyScalar(isPink ? 0.5 : 0.28),
     emissive: hex,
-    emissiveIntensity: isPink ? 1.6 : 0.85,
+    emissiveIntensity: isPink ? 1.9 : 1.1,
     metalness: 0.1,
     roughness: 0.6,
     transparent: true,

@@ -774,6 +774,11 @@ kbd {
   border-color: rgba(255, 196, 67, 0.55);
 }
 
+/* Hide graphics quality picker - unified high quality */
+.mod-row:has(#quality-picker) {
+  display: none;
+}
+
 .mod-hint {
   font-size: clamp(0.4rem, 0.82vw, 0.52rem);
   letter-spacing: 0.14em;
