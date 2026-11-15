@@ -35,11 +35,15 @@ html,
 body {
   width: 100%;
   height: 100%;
+  /* dvh tracks the mobile browser's dynamic toolbar; 100% alone leaves a gap
+     when the address bar collapses/expands (iOS Safari, Chrome Android). */
+  height: 100dvh;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
   overflow: auto;
+  overscroll-behavior: none;
 }
 
 /* Canvas layer handles its own overflow (prevents rubber-band during play). */
@@ -145,10 +149,14 @@ body {
   text-shadow: 0 0 12px rgba(47, 216, 255, 0.32);
 }
 
-/* Mobile HUD: smaller, higher contrast, tighter */
+/* Mobile HUD: smaller, higher contrast, tighter. Safe-area insets keep the
+   score/misses clear of the notch and rounded corners in landscape. */
 body.is-touch #hud {
   gap: 0.5rem;
   padding: 0.5rem 0.7rem;
+  padding-top: calc(0.5rem + env(safe-area-inset-top));
+  padding-left: calc(0.7rem + env(safe-area-inset-left));
+  padding-right: calc(0.7rem + env(safe-area-inset-right));
   font-size: 0.78em;
 }
 
@@ -843,6 +851,10 @@ kbd {
   gap: 0.85rem;
   text-align: center;
   padding: 2rem;
+  padding-top: calc(2rem + env(safe-area-inset-top));
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+  padding-left: calc(2rem + env(safe-area-inset-left));
+  padding-right: calc(2rem + env(safe-area-inset-right));
   background: radial-gradient(
     ellipse at 50% 55%,
     rgba(40, 10, 26, 0.88) 0%,
@@ -1087,9 +1099,9 @@ kbd {
 #pause-btn {
   position: absolute;
   top: clamp(0.9rem, 2vw, 1.5rem);
-  right: clamp(1rem, 3vw, 2.2rem);
+  right: calc(clamp(1rem, 3vw, 2.2rem) + env(safe-area-inset-right));
   /* Sits under the HUD blocks, offset downward */
-  top: clamp(4.2rem, 8vw, 5.4rem);
+  top: calc(clamp(4.2rem, 8vw, 5.4rem) + env(safe-area-inset-top));
   padding: 0.42rem 0.85rem !important;
   font-size: clamp(0.5rem, 1vw, 0.62rem) !important;
   letter-spacing: 0.24em !important;
@@ -1112,6 +1124,10 @@ kbd {
   gap: 0.9rem;
   text-align: center;
   padding: 2rem;
+  padding-top: calc(2rem + env(safe-area-inset-top));
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+  padding-left: calc(2rem + env(safe-area-inset-left));
+  padding-right: calc(2rem + env(safe-area-inset-right));
   background: radial-gradient(
     ellipse at 50% 55%,
     rgba(10, 22, 34, 0.9) 0%,
@@ -1221,6 +1237,10 @@ body.is-touch #touch-zones {
   height: 38vh;
   min-height: 160px;
   max-height: 280px;
+  /* Keep tap targets clear of the iOS home bar / Android gesture bar. */
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   display: none;
   pointer-events: none;
   z-index: 20;
@@ -1348,11 +1368,11 @@ body.is-touch .key-guide {
   display: none;
 }
 
-/* Mobile pause button repositioned */
+/* Mobile pause button repositioned above the touch zones, clear of the notch */
 body.is-touch #pause-btn {
   top: auto;
-  bottom: calc(38vh + 0.8rem);
-  right: 1rem;
+  bottom: calc(38vh + 0.8rem + env(safe-area-inset-bottom));
+  right: calc(1rem + env(safe-area-inset-right));
 }
 
 /* ---------- Rotate-to-landscape overlay ---------- */
@@ -1472,6 +1492,11 @@ body.is-touch #pause-btn {
   padding: 2rem 2.4rem;
   max-width: 480px;
   width: 90%;
+  /* On short landscape screens (iPhone, foldables) the card can exceed the
+     viewport. Clamp its height and let it scroll. */
+  max-height: 90dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   text-align: center;
   display: flex;
   flex-direction: column;

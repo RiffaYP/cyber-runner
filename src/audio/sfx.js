@@ -16,6 +16,14 @@ function getAudioContext() {
   return audioCtx
 }
 
+/** Call once from a user gesture (click/touch) to unlock SFX on iOS. */
+export function unlockSfx() {
+  if (!audioCtx) getAudioContext()
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {})
+  }
+}
+
 function getNoiseBuffer(ctx) {
   if (!noiseBuffer && ctx) {
     const bufferSize = Math.floor(ctx.sampleRate * 0.05)

@@ -174,8 +174,25 @@ export const beatDetector = {
       onset[i] = flux[i] - sum / count
     }
 
-    const MIN_LAG = 20
-    const MAX_LAG = 150
+    /*
+     * Tempo search, done INSIDE the gameplay range.
+     *
+     * The old code searched 0.20-1.50 s with a `lag^0.25` bonus and then folded
+     * the result into 80-170 BPM. On ballads that folded the TRUE tempo away
+     * and locked onto the double-time peak: "So Far Away" (~76 BPM, beat 0.79 s)
+     * was read as 151.9 BPM, so the 8th-note snap grid sat between the beats the
+     * player actually hears and notes felt off.
+     *
+     * Searching 60-200 BPM directly (0.30-1.00 s) and taking the strongest peak
+     * recovers the real tempo on every bundled track without any folding:
+     *   So Far Away  -> 75.9 BPM
+     *   Oasis        -> 166.7 BPM
+     *   Metallica    -> 103.4 BPM
+     */
+    const BPM_MIN = 60
+    const BPM_MAX = 200
+    const MIN_LAG = Math.round(60 / BPM_MAX / 0.01) // 30 frames = 0.30 s
+    const MAX_LAG = Math.round(60 / BPM_MIN / 0.01) // 100 frames = 1.00 s
     const autocorr = new Float64Array(MAX_LAG + 1)
 
     for (let lag = MIN_LAG; lag <= MAX_LAG; lag++) {
@@ -190,17 +207,14 @@ export const beatDetector = {
     for (let lag = MIN_LAG + 1; lag < MAX_LAG; lag++) {
       const isPeak = autocorr[lag] > autocorr[lag - 1] && autocorr[lag] >= autocorr[lag + 1]
       if (!isPeak || autocorr[lag] <= 0) continue
-      const score = autocorr[lag] * Math.pow(lag, 0.25)
-      if (score > bestScore) {
-        bestScore = score
+      if (autocorr[lag] > bestScore) {
+        bestScore = autocorr[lag]
         bestLag = lag
       }
     }
 
-    let beatInterval = bestLag * 0.01
-
-    while (beatInterval < 60 / 170) beatInterval *= 2
-    while (beatInterval > 60 / 80) beatInterval /= 2
+    // No folding: the search already covers the playable range.
+    const beatInterval = bestLag * 0.01
 
     const bpm = 60 / beatInterval
 
@@ -400,25 +414,39 @@ export const beatDetector = {
         // --- Snap each hit to the nearest beat subdivision -----------------
         // Free-floating onset times feel random: the player hears "click" but
         // cannot predict WHERE the next note lands. Snapping to a musical grid
-        // (8th notes) keeps every note on a beat the ear can count while still
-        // following the real drum moments. Snaps only apply within a small
-        // tolerance — a genuinely off-grid hit is left alone.
+        // keeps every note on a beat the ear can count while still following
+        // the real drum moments. Snaps only apply within a small tolerance — a
+        // genuinely off-grid hit is left alone.
+        //
+        // Grid density adapts to tempo. Fast tracks get an 8th-note grid, which
+        // still divides down to a musically sensible beat. Slow ballads (below
+        // ~100 BPM) get a quarter-note (one-beat) grid: an 8th grid there is
+        // half a beat apart, and that sub-beat lives between the pulses the
+        // player actually feels — exactly what made "So Far Away" (76 BPM) feel
+        // like the notes did not match the drumming.
         const tempo = await this.getTempo(url)
         const beatInterval = tempo.beatInterval
         const beatOffset = tempo.offset
-        const snapGrid = beatInterval / 2 // 8th notes
+        const isSlow = 60 / beatInterval < 100
+        const snapGrid = isSlow ? beatInterval : beatInterval / 2
         const snapTolerance = snapGrid * 0.42
 
+        // A hit that cannot be placed on the grid is DROPPED rather than kept
+        // off-grid. Off-grid notes are the ones that feel wrong: the drum is
+        // real, but it sits between the pulses the player counts against, so
+        // striking "on the beat" misses it. Losing a handful of sub-beat
+        // ghost notes is better than keeping notes that cannot be played by ear.
         const quantize = (time) => {
           const rel = time - beatOffset
           const snapped = beatOffset + Math.round(rel / snapGrid) * snapGrid
-          return Math.abs(snapped - time) <= snapTolerance ? snapped : time
+          return Math.abs(snapped - time) <= snapTolerance ? snapped : null
         }
 
         const toGrid = (list) => {
           const out = []
           for (const hit of list) {
             const snapped = quantize(hit.time)
+            if (snapped === null) continue
             const last = out[out.length - 1]
             // After snapping, two hits may collapse onto the same grid slot.
             if (last && snapped - last.time < mergeWindow) {

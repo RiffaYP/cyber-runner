@@ -1,10 +1,11 @@
 import './style.css'
 
 import * as THREE from 'three'
-import { isMobile } from './device.js'
+import { isMobile, prefersLandscape } from './device.js'
 import { initTouch } from './touch.js'
+import { unlockSfx } from './audio/sfx.js'
 import { CONFIG, mirrorLane, activeNoteSpeed } from './config.js'
-import { loadSettings } from './storage.js'
+import { loadSettings, highScores } from './storage.js'
 import { audio } from './audio/audioEngine.js'
 import { readId3Tags } from './audio/id3.js'
 import {
@@ -295,6 +296,8 @@ function init() {
       isPlaying: () => game.isPlaying && !game.isStarting,
       isPaused: () => game.isPaused,
     })
+    // Touch zones are the first user gesture on mobile; unlock SFX AudioContext
+    unlockSfx()
   }
 
   songLibrary.init()
@@ -340,7 +343,10 @@ function init() {
     prefetchSelectedSong()
   })
 
-  ui.startButton?.addEventListener('click', () => startSelectedSong())
+  ui.startButton?.addEventListener('click', () => {
+    unlockSfx()
+    startSelectedSong()
+  })
   ui.restartButton?.addEventListener('click', () => game.start())
   ui.overMenuButton?.addEventListener('click', () => goToMainMenu())
   ui.quitButton?.addEventListener('click', () => game.start())
