@@ -1404,22 +1404,49 @@ body.is-touch #pause-btn {
 }
 
 #keybind-select {
-  background: rgba(8, 16, 28, 0.85);
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #0a1626;
+  background-image: linear-gradient(45deg, transparent 50%, var(--lane-0) 50%),
+    linear-gradient(135deg, var(--lane-0) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 2px),
+    calc(100% - 9px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
   color: var(--ink);
   border: 1px solid rgba(47, 216, 255, 0.28);
   border-radius: 0.35rem;
-  padding: 0.35rem 0.6rem;
+  padding: 0.35rem 1.8rem 0.35rem 0.6rem;
   font-family: var(--font);
   font-size: 0.7rem;
   letter-spacing: 0.12em;
   cursor: pointer;
 }
 
+#keybind-select:hover,
+#keybind-select:focus-visible {
+  border-color: var(--lane-0);
+  outline: none;
+  box-shadow: 0 0 12px rgba(47, 216, 255, 0.28);
+}
+
+/* Native dropdown list: dark background so options stay readable. */
+#keybind-select option {
+  background-color: #0a1626;
+  color: var(--ink);
+}
+
 .gamepad-hint {
   font-size: 0.62rem;
   letter-spacing: 0.14em;
-  color: var(--lane-1);
+  color: var(--ink-dim);
   font-weight: 700;
+  transition: color 0.2s ease;
+}
+
+.gamepad-hint.is-on {
+  color: var(--lane-1);
 }
 
 /* ==========================================================================

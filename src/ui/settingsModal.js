@@ -5,6 +5,7 @@ import { onResize } from '../render/scene.js'
 import { openCalibration } from './calibrationModal.js'
 import { setSfxVolume } from '../audio/sfx.js'
 import { audio } from '../audio/audioEngine.js'
+import { input } from '../game/input.js'
 
 export function setSpeed(speed) {
   const next = SPEED_OPTIONS.includes(speed) ? speed : 1
@@ -138,6 +139,29 @@ export function initSettingsUI(game, songLibrary, beatDetector, prefetchFn) {
       saveSettings()
     })
   }
+
+  // Gamepad status indicator (reflects real connection state)
+  const gamepadHint = document.getElementById('gamepad-hint')
+  const syncGamepadHint = () => {
+    if (!gamepadHint) return
+    const pads =
+      typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : []
+    const connected = Array.from(pads || []).some((p) => p && p.connected)
+    gamepadHint.textContent = connected ? '🎮 GAMEPAD CONNECTED' : '🎮 NO GAMEPAD'
+    gamepadHint.classList.toggle('is-on', connected)
+  }
+  window.addEventListener('gamepadconnected', syncGamepadHint)
+  window.addEventListener('gamepaddisconnected', () => {
+    syncGamepadHint()
+    // Release any lane held on the disconnected pad.
+    for (let lane = 0; lane < CONFIG.laneCount; lane++) {
+      document
+        .querySelector(`.lane-key[data-lane="${lane}"]`)
+        ?.classList.remove('active')
+    }
+    if (input?.gamepadButtonsState) input.gamepadButtonsState.clear()
+  })
+  syncGamepadHint()
 
   // Difficulty toggle
   for (const button of ui.difficultyButtons) {
