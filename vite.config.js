@@ -8,4 +8,16 @@ export default defineConfig(({ command, isPreview }) => ({
   // otherwise the built index.html requests /cyber-runner/assets/*.js from a
   // server rooted at '/', every asset 404s and only the raw HTML shows up.
   base: command === 'build' || isPreview ? '/cyber-runner/' : '/',
+  build: {
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/three/')) {
+            return 'three'
+          }
+        },
+      },
+    },
+  },
 }))

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/cyber-runner/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
@@ -171,6 +171,44 @@
               <button id="offset-reset" type="button" class="btn-small btn-ghost" title="Reset offset to 0">
                 0 ms
               </button>
+              <button id="calib-open-btn" type="button" class="btn-small btn-ghost" title="Interactive latency calibration">
+                CALIBRATE
+              </button>
+            </div>
+          </div>
+          <div class="mod-row">
+            <span class="mod-label">VOLUME</span>
+            <div class="offset-wrap">
+              <span class="volume-label">SFX</span>
+              <input
+                id="sfx-volume-slider"
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                value="70"
+                aria-label="Sound effects volume"
+              />
+              <span class="volume-label">MUSIC</span>
+              <input
+                id="music-volume-slider"
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                value="80"
+                aria-label="Music volume"
+              />
+            </div>
+          </div>
+          <div class="mod-row">
+            <span class="mod-label">KEYS</span>
+            <div class="keybind-wrap">
+              <select id="keybind-select" class="seg-btn" aria-label="Keybinding preset">
+                <option value="digits">1 2 3 4</option>
+                <option value="dfjk">D F J K</option>
+              </select>
+              <span class="gamepad-hint" title="Gamepad supported via D-Pad, Triggers, or Face Buttons">🎮 GAMEPAD READY</span>
             </div>
           </div>
           <div class="mod-row">
