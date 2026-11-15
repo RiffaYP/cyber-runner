@@ -400,13 +400,13 @@ export const beatDetector = {
         // --- Snap each hit to the nearest beat subdivision -----------------
         // Free-floating onset times feel random: the player hears "click" but
         // cannot predict WHERE the next note lands. Snapping to a musical grid
-        // (beat, half, quarter-beat) keeps every note on something the ear can
-        // count while still following the real drum moments. Snaps only apply
-        // within a small tolerance — a genuinely off-grid hit is left alone.
+        // (8th notes) keeps every note on a beat the ear can count while still
+        // following the real drum moments. Snaps only apply within a small
+        // tolerance — a genuinely off-grid hit is left alone.
         const tempo = await this.getTempo(url)
         const beatInterval = tempo.beatInterval
         const beatOffset = tempo.offset
-        const snapGrid = beatInterval / 4 // 16th notes
+        const snapGrid = beatInterval / 2 // 8th notes
         const snapTolerance = snapGrid * 0.42
 
         const quantize = (time) => {
