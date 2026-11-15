@@ -60,6 +60,15 @@ export const beatDetector = {
     return `${mode}:${url}`
   },
 
+  /** Detected tempo for a URL, cached with the rest of the beat analysis. */
+  async getTempo(url) {
+    const tempo = await this.detect(url)
+    return {
+      beatInterval: tempo.beatInterval,
+      offset: tempo.offset,
+    }
+  },
+
   resolveMode(mode) {
     return CONFIG.difficulties[mode] ? mode : CONFIG.defaultDifficulty
   },
@@ -314,8 +323,8 @@ export const beatDetector = {
             ),
           )
 
-        const kickEnv = bandEnvelope(30, 110)
-        const snareEnv = bandEnvelope(150, 400)
+        const kickEnv = bandEnvelope(40, 160)
+        const snareEnv = bandEnvelope(150, 500)
         const hatEnv = bandEnvelope(6500, 9000)
         reportProgress(0.75, 'FINDING DRUM HITS…')
         throwIfCancelled()
@@ -362,10 +371,10 @@ export const beatDetector = {
         const snareRef = percentile(snareEnv, 0.9)
         const hatRef = percentile(hatEnv, 0.9)
 
-        const kickHits = detectBand(kickEnv, 10, Math.max(0.008, kickRef * 0.1))
-        const snareHits = detectBand(snareEnv, 10, Math.max(0.006, snareRef * 0.1))
+        const kickHits = detectBand(kickEnv, 7, Math.max(0.004, kickRef * 0.06))
+        const snareHits = detectBand(snareEnv, 7, Math.max(0.003, snareRef * 0.06))
         const hatHits = useHats
-          ? detectBand(hatEnv, 9, Math.max(0.004, hatRef * 0.1))
+          ? detectBand(hatEnv, 7, Math.max(0.002, hatRef * 0.06))
           : []
 
         const hits = [
@@ -388,8 +397,47 @@ export const beatDetector = {
           merged.push({ ...hit })
         }
 
+        // --- Snap each hit to the nearest beat subdivision -----------------
+        // Free-floating onset times feel random: the player hears "click" but
+        // cannot predict WHERE the next note lands. Snapping to a musical grid
+        // (beat, half, quarter-beat) keeps every note on something the ear can
+        // count while still following the real drum moments. Snaps only apply
+        // within a small tolerance — a genuinely off-grid hit is left alone.
+        const tempo = await this.getTempo(url)
+        const beatInterval = tempo.beatInterval
+        const beatOffset = tempo.offset
+        const snapGrid = beatInterval / 4 // 16th notes
+        const snapTolerance = snapGrid * 0.42
+
+        const quantize = (time) => {
+          const rel = time - beatOffset
+          const snapped = beatOffset + Math.round(rel / snapGrid) * snapGrid
+          return Math.abs(snapped - time) <= snapTolerance ? snapped : time
+        }
+
+        const toGrid = (list) => {
+          const out = []
+          for (const hit of list) {
+            const snapped = quantize(hit.time)
+            const last = out[out.length - 1]
+            // After snapping, two hits may collapse onto the same grid slot.
+            if (last && snapped - last.time < mergeWindow) {
+              if (hit.strength > last.strength) {
+                last.time = snapped
+                last.strength = hit.strength
+                last.type = hit.type
+              }
+              continue
+            }
+            out.push({ ...hit, time: snapped })
+          }
+          return out
+        }
+
+        const onGrid = toGrid(merged)
+
         const chart = []
-        for (const hit of merged) {
+        for (const hit of onGrid) {
           const last = chart[chart.length - 1]
           if (last && hit.time - last.time < minGap) continue
           chart.push(hit)
