@@ -18,94 +18,87 @@ function getAudioContext() {
 
 function getNoiseBuffer(ctx) {
   if (!noiseBuffer && ctx) {
-    const bufferSize = ctx.sampleRate * 0.05 // 50ms of white noise
+    const bufferSize = Math.floor(ctx.sampleRate * 0.05)
     noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
     const data = noiseBuffer.getChannelData(0)
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1
-    }
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1
   }
   return noiseBuffer
 }
 
+/**
+ * Woodblock-style hit. A short pitched body (two detuned sines, fast decay)
+ * plus a tiny stick-attack noise burst on top. Dry, percussive, low — no
+ * pitch sweep, which is what made the old click sound like a laser.
+ */
 export function playHit(grade = 'perfect') {
   if (CONFIG.sfxVolume <= 0) return
   const ctx = getAudioContext()
   if (!ctx) return
 
   const now = ctx.currentTime
-  const masterGain = ctx.createGain()
-  masterGain.gain.setValueAtTime(CONFIG.sfxVolume, now)
-  masterGain.connect(ctx.destination)
+  const master = ctx.createGain()
+  master.gain.setValueAtTime(CONFIG.sfxVolume, now)
+  master.connect(ctx.destination)
 
   if (grade === 'miss' || grade === 'bad') {
-    // Low dull thud
+    // Dead low thud for a whiff.
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
-
     osc.type = 'sine'
-    osc.frequency.setValueAtTime(140, now)
-    osc.frequency.exponentialRampToValueAtTime(50, now + 0.08)
-
-    gain.gain.setValueAtTime(0.4, now)
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08)
-
-    osc.connect(gain)
-    gain.connect(masterGain)
-
+    osc.frequency.setValueAtTime(120, now)
+    osc.frequency.exponentialRampToValueAtTime(55, now + 0.07)
+    gain.gain.setValueAtTime(0.35, now)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09)
+    osc.connect(gain).connect(master)
     osc.start(now)
-    osc.stop(now + 0.08)
+    osc.stop(now + 0.09)
     return
   }
 
-  // Pitch settings for hit sound
-  let freq = 1100
-  let gainLevel = 0.6
-  if (grade === 'good') {
-    freq = 900
-    gainLevel = 0.5
-  } else if (grade === 'ok') {
-    freq = 750
-    gainLevel = 0.4
-  }
+  // Woodblock body frequency: perfect highest, ok lowest. Short enough
+  // (<= 60 ms) to stay a click rather than a tone.
+  const bodyFreq = grade === 'perfect' ? 880 : grade === 'good' ? 740 : 620
+  const decay = grade === 'perfect' ? 0.055 : 0.045
 
-  // 1. Tonal click (woodblock/rimshot harmonic)
-  const osc = ctx.createOscillator()
-  const oscGain = ctx.createGain()
-  osc.type = 'triangle'
-  osc.frequency.setValueAtTime(freq, now)
-  osc.frequency.exponentialRampToValueAtTime(freq * 0.4, now + 0.04)
+  const osc1 = ctx.createOscillator()
+  const osc2 = ctx.createOscillator()
+  const bodyGain = ctx.createGain()
+  osc1.type = 'sine'
+  osc2.type = 'sine'
+  osc1.frequency.setValueAtTime(bodyFreq, now)
+  // Slight detune gives the woody, hollow quality of a woodblock.
+  osc2.frequency.setValueAtTime(bodyFreq * 2.71, now)
 
-  oscGain.gain.setValueAtTime(gainLevel, now)
-  oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.045)
+  bodyGain.gain.setValueAtTime(0.001, now)
+  bodyGain.gain.exponentialRampToValueAtTime(0.55, now + 0.002)
+  bodyGain.gain.exponentialRampToValueAtTime(0.001, now + decay)
 
-  osc.connect(oscGain)
-  oscGain.connect(masterGain)
+  osc1.connect(bodyGain)
+  osc2.connect(bodyGain)
+  bodyGain.connect(master)
+  osc1.start(now)
+  osc2.start(now)
+  osc1.stop(now + decay)
+  osc2.stop(now + decay)
 
-  osc.start(now)
-  osc.stop(now + 0.045)
-
-  // 2. High-frequency noise snap (crisp acoustic click)
+  // Stick attack: a very short band-passed noise tick, not a whoosh.
   const noise = ctx.createBufferSource()
   noise.buffer = getNoiseBuffer(ctx)
+  const band = ctx.createBiquadFilter()
+  band.type = 'bandpass'
+  band.frequency.setValueAtTime(3200, now)
+  band.Q.setValueAtTime(1.2, now)
+  const tick = ctx.createGain()
+  tick.gain.setValueAtTime(0.18, now)
+  tick.gain.exponentialRampToValueAtTime(0.001, now + 0.012)
 
-  const filter = ctx.createBiquadFilter()
-  filter.type = 'bandpass'
-  filter.frequency.setValueAtTime(2500, now)
-  filter.Q.setValueAtTime(1.5, now)
-
-  const noiseGain = ctx.createGain()
-  noiseGain.gain.setValueAtTime(gainLevel * 0.7, now)
-  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.035)
-
-  noise.connect(filter)
-  filter.connect(noiseGain)
-  noiseGain.connect(masterGain)
-
+  noise.connect(band).connect(tick).connect(master)
   noise.start(now)
-  noise.stop(now + 0.035)
+  noise.stop(now + 0.012)
 }
 
+/** Calibration metronome click: pure, dull, short — easy to tap against. */
 export function playBeep(accent = false) {
   if (CONFIG.sfxVolume <= 0) return
   const ctx = getAudioContext()
@@ -115,18 +108,16 @@ export function playBeep(accent = false) {
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
 
-  osc.type = 'sine'
-  osc.frequency.setValueAtTime(accent ? 900 : 600, now)
+  osc.type = 'square'
+  osc.frequency.setValueAtTime(accent ? 1500 : 1000, now)
 
-  const vol = Math.min(1, CONFIG.sfxVolume * 0.8)
+  const vol = Math.min(1, CONFIG.sfxVolume * 0.55)
   gain.gain.setValueAtTime(vol, now)
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04)
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03)
 
-  osc.connect(gain)
-  gain.connect(ctx.destination)
-
+  osc.connect(gain).connect(ctx.destination)
   osc.start(now)
-  osc.stop(now + 0.04)
+  osc.stop(now + 0.03)
 }
 
 export function setSfxVolume(volume) {
