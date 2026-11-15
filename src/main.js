@@ -161,17 +161,18 @@ async function retrySelectedSong() {
 
 function goToMainMenu() {
   songLibrary.stopPreview()
+  // Keep the song the player was just on selected in the dropdown.
+  if (!game.currentSong) game.currentSong = songLibrary.selected
   game.isPlaying = false
   game.isPaused = false
   document.body.classList.remove('is-playing')
   rhythm.stop()
   audio.pause()
-  game.currentSong = null
   obstacleManager.clear()
   input.releaseAll()
   hideAnalysis()
   ui.retryButton?.classList.add('hidden')
-  songLibrary.selected = songLibrary.first()
+  if (game.currentSong) songLibrary.selected = game.currentSong
   songLibrary.render()
   songLibrary.clearStatus()
   renderDifficulty(game, beatDetector)

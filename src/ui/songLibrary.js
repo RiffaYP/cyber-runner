@@ -116,6 +116,10 @@ export const songLibrary = {
       ui.songSelect.appendChild(g)
     }
 
+    // Keep the native control in sync with the model (a rebuild alone does not
+    // always move the visible selection back).
+    if (current) ui.songSelect.value = current
+
     this.renderInfo()
   },
 
