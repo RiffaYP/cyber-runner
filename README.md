@@ -33,12 +33,16 @@ npm run preview   # cek hasil build
 2. Klik **START GAME** — akan muncul hitung mundur **3 - 2 - 1 - GO**.
 3. Tekan tombol jalur saat kotak mencapai garis hit.
 
-| Jalur | Tombol |
-|:---:|:---:|
-| 1 | `1` |
-| 2 | `2` |
-| 3 | `3` |
-| 4 | `4` |
+| Jalur | Tombol (preset 1234) | Tombol (preset DFJK) |
+|:---:|:---:|:---:|
+| 1 | `1` | `D` |
+| 2 | `2` | `F` |
+| 3 | `3` | `J` |
+| 4 | `4` | `K` |
+
+**Gamepad:** didukung lewat Gamepad API — D-Pad (kiri/bawah/atas/kanan),
+trigger/shoulder (`L2 L1 R1 R2`), atau tombol wajah (`X Y A B`). Tombol
+**Start** untuk jeda.
 
 **Jeda:** `Esc` atau `P` (juga otomatis saat tab kehilangan fokus).
 Dari menu jeda tersedia **RESUME**, **RESTART**, dan **MAIN MENU**.
@@ -72,6 +76,14 @@ Combo menambah pengali skor. **10 MISS** mengakhiri permainan.
   unggah MP3 sendiri (maks 30 MB, hanya untuk sesi berjalan).
 - **Pause** dengan nilai tetap sinkron: musik berhenti, chart berhenti, grid
   dibekukan, lalu menyambung tepat di posisi semula.
+- **Hit SFX sintetis.** Setiap ketukan menghasilkan suara klik/rimshot dari
+  Web Audio (nada berbeda per grade, dentuman rendah saat miss). Tidak butuh
+  file audio tambahan.
+- **Kalibrasi latency interaktif.** Tombol **CALIBRATE** membuka wizard
+  tap-to-beat (120 BPM, 16 ketukan). Rata-rata offset dihitung otomatis dan
+  diterapkan ke timing window — penting untuk headphone Bluetooth.
+- **Volume terpisah** untuk SFX dan musik.
+- **Preset keybind** `1 2 3 4` atau `D F J K`.
 
 ---
 
@@ -79,31 +91,71 @@ Combo menambah pengali skor. **10 MISS** mengakhiri permainan.
 
 ```
 cyber-runner/
-├── index.html          # Overlay DOM (HUD, menu, pause, countdown)
+├── index.html            # Overlay DOM (HUD, menu, pause, countdown)
+├── vite.config.js        # Base path Pages + split chunk three.js
 ├── public/
-│   ├── track.mp3       # (opsional) lagu bawaan lama
-│   └── songs/          # File MP3 lagu
-│       └── README.txt  # Petunjuk menambah lagu
-└── src/
-    ├── main.js         # Seluruh logika game
-    └── style.css       # Tampilan overlay neon
+│   ├── favicon.svg
+│   └── songs/            # File MP3 lagu (+ README.txt petunjuk)
+├── src/
+│   ├── main.js           # Entry: wiring, game loop, event DOM
+│   ├── config.js         # CONFIG, COLORS, MODIFIERS
+│   ├── storage.js        # localStorage, high score, settings
+│   ├── style.css         # Tampilan overlay neon
+│   ├── touch.js          # Zona sentuh mobile
+│   ├── device.js         # Deteksi mobile/iOS/Android
+│   ├── audio/
+│   │   ├── audioEngine.js    # Elemen audio + jam offset
+│   │   ├── sfx.js            # SFX sintesis Web Audio
+│   │   ├── id3.js            # Parser tag MP3
+│   │   └── calibration.js    # LatencyCalibrator
+│   ├── chart/
+│   │   └── beatDetector.js   # BPM, onset drum, cache chart
+│   ├── render/
+│   │   ├── scene.js          # Renderer, camera, bloom, resize
+│   │   ├── road.js           # Grid, rail, beam, garis hit
+│   │   ├── playerMesh.js     # Paddle, pulse, flash
+│   │   └── obstacles.js      # Spawn note, gerak, judge, miss
+│   ├── game/
+│   │   ├── rhythmEngine.js   # Penjadwal note
+│   │   ├── gameState.js      # Skor, combo, pause, game over
+│   │   └── input.js          # Keyboard + gamepad
+│   └── ui/
+│       ├── dom.js            # Handle DOM, HUD, countdown
+│       ├── songLibrary.js    # Katalog, preview, upload
+│       ├── settingsModal.js  # Modifier/setting UI
+│       └── calibrationModal.js
+└── test/                 # Vitest (judgment, config, kalibrasi)
 ```
 
 ### Menambah Lagu
 
 1. Taruh file MP3 di `public/songs/`.
-2. Tambahkan entri di `CONFIG.songs` pada `src/main.js`:
+2. Tambahkan entri di `CONFIG.songs` pada `src/config.js`:
 
 ```js
-{ id: 'id-unik', title: 'Judul', artist: 'Artis', url: '/songs/nama-file.mp3' },
+{ id: 'id-unik', title: 'Judul', artist: 'Artis', url: '/cyber-runner/songs/nama-file.mp3' },
 ```
 
 > **Penting:** nama file di `url` harus **persis** sama dengan nama file di
 > disk — termasuk spasi dan apostrof. Gunakan apostrof ASCII (`'`), bukan
 > apostrof Unicode (`’`), karena URL yang tidak cocok akan membuat server
-> mengembalikan halaman HTML dan lagu gagal dimuat.
+> mengembalikan halaman HTML dan lagu gagal dimuat. Spasi dan karakter khusus
+> harus di-encode (`%20`, `%27`).
 >
 > Lagu diurutkan otomatis berdasarkan `title` (A-Z).
+
+---
+
+## Skrip
+
+```bash
+npm run dev       # dev server
+npm run build     # build produksi
+npm run preview   # cek hasil build
+npm run test      # jalankan Vitest
+npm run lint      # ESLint
+npm run format    # Prettier
+```
 
 ---
 
@@ -111,7 +163,10 @@ cyber-runner/
 
 - [Three.js](https://threejs.org/) — render 3D, EffectComposer, UnrealBloomPass
 - [Vite](https://vite.dev/) — dev server & bundler
-- Web Audio API (`OfflineAudioContext`) — decode & analisis audio
+- Web Audio API (`OfflineAudioContext`, `AudioContext`) — decode, analisis audio, SFX
+- Gamepad API — dukungan stik
+- [Vitest](https://vitest.dev/) — unit test
+- ESLint + Prettier — lint & format
 
 ---
 
