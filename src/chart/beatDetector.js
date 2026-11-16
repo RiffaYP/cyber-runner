@@ -1,5 +1,67 @@
 import { CONFIG } from '../config.js'
 
+/**
+ * Choose the tempo whose grid the detected onsets cluster on most tightly.
+ *
+ * Picking the strongest autocorrelation peak is not enough: on rubato / live
+ * tracks the true tempo's peak can be weaker than a harmonic. Instead we score
+ * every candidate by how closely the onsets sit to its nearest grid ticks
+ * (mean distance NORMALISED by tick spacing, so a dense grid cannot win just by
+ * having more slots), and let a small autocorrelation term break ties.
+ *
+ * @param {number[]} onsets  onset times in seconds
+ * @param {{lag:number, score:number}[]} candidates  autocorr peaks (lag in frames of 10ms)
+ * @returns {{beatInterval:number, offset:number, strength:number}}
+ */
+export function selectTempo(onsets, candidates) {
+  if (!onsets.length || !candidates.length) {
+    return { beatInterval: 0.5, offset: 0, strength: 0 }
+  }
+
+  // Best phase for a given period (fixed 50 ms tolerance so candidate tempos
+  // are compared on equal footing).
+  const fitGrid = (beatInterval) => {
+    const tolerance = 0.05
+    let bestOffset = 0
+    let bestHits = -1
+    for (let offset = 0; offset < beatInterval; offset += 0.005) {
+      let hits = 0
+      for (const time of onsets) {
+        const phase = (((time - offset) % beatInterval) + beatInterval) % beatInterval
+        if (Math.min(phase, beatInterval - phase) < tolerance) hits++
+      }
+      if (hits > bestHits) {
+        bestHits = hits
+        bestOffset = offset
+      }
+    }
+    return { offset: bestOffset }
+  }
+
+  const meanGridDistance = (beatInterval, offset) => {
+    let sum = 0
+    for (const time of onsets) {
+      const phase = (((time - offset) % beatInterval) + beatInterval) % beatInterval
+      sum += Math.min(phase, beatInterval - phase)
+    }
+    return sum / onsets.length
+  }
+
+  let best = null
+  const maxScore = candidates.reduce((m, c) => Math.max(m, c.score), 0) || 1
+  for (const candidate of candidates) {
+    const beatInterval = candidate.lag * 0.01
+    const { offset } = fitGrid(beatInterval)
+    const meanDist = meanGridDistance(beatInterval, offset)
+    const fitQuality = Math.max(0, 1 - meanDist / (beatInterval * 0.5))
+    const strength = fitQuality + 0.05 * (candidate.score / maxScore)
+    if (!best || strength > best.strength) {
+      best = { beatInterval, offset, strength }
+    }
+  }
+  return best
+}
+
 export const analysisJob = {
   active: false,
   cancelled: false,
@@ -223,28 +285,6 @@ export const beatDetector = {
       if (onset[i] >= onsetThreshold) onsets.push(i * 0.01)
     }
 
-    // Best phase + fraction of onsets that land on the grid for a given period.
-    // A FIXED tolerance (not scaled by period) so candidate tempos are compared
-    // on equal footing: what matters is how tightly the song's onsets cluster
-    // around each grid, not how wide a coarse grid can afford to be.
-    const fitGrid = (beatInterval) => {
-      const tolerance = 0.05
-      let bestOffset = 0
-      let bestHits = -1
-      for (let offset = 0; offset < beatInterval; offset += 0.005) {
-        let hits = 0
-        for (const time of onsets) {
-          const phase = (((time - offset) % beatInterval) + beatInterval) % beatInterval
-          if (Math.min(phase, beatInterval - phase) < tolerance) hits++
-        }
-        if (hits > bestHits) {
-          bestHits = hits
-          bestOffset = offset
-        }
-      }
-      return { offset: bestOffset, hits: Math.max(0, bestHits) }
-    }
-
     const candidates = []
     for (let lag = MIN_LAG + 1; lag < MAX_LAG; lag++) {
       const isPeak = autocorr[lag] > autocorr[lag - 1] && autocorr[lag] >= autocorr[lag + 1]
@@ -253,34 +293,7 @@ export const beatDetector = {
     }
     if (candidates.length === 0) candidates.push({ lag: MIN_LAG, score: 0 })
 
-    // Pick the tempo whose grid the onsets cluster on most tightly. Grid-fit is
-    // measured as the mean distance from each onset to its nearest grid tick,
-    // NORMALISED by the tick spacing so a dense grid (many close ticks) cannot
-    // win just by having more slots to catch onsets. A small autocorrelation
-    // term breaks ties between grids that fit equally.
-    const meanGridDistance = (beatInterval, offset) => {
-      let sum = 0
-      for (const time of onsets) {
-        const phase = (((time - offset) % beatInterval) + beatInterval) % beatInterval
-        sum += Math.min(phase, beatInterval - phase)
-      }
-      return sum / onsets.length
-    }
-
-    let best = null
-    const maxScore = candidates.reduce((m, c) => Math.max(m, c.score), 0) || 1
-    for (const candidate of candidates) {
-      const beatInterval = candidate.lag * 0.01
-      const { offset } = fitGrid(beatInterval)
-      const meanDist = meanGridDistance(beatInterval, offset)
-      // Lower mean distance = better fit. Normalise to 0..1 (1 = perfect).
-      const fitQuality = Math.max(0, 1 - meanDist / (beatInterval * 0.5))
-      const strength = fitQuality + 0.05 * (candidate.score / maxScore)
-      if (!best || strength > best.strength) {
-        best = { beatInterval, offset, strength }
-      }
-    }
-
+    const best = selectTempo(onsets, candidates)
     const beatInterval = best.beatInterval
     const bpm = 60 / beatInterval
 
@@ -292,7 +305,8 @@ export const beatDetector = {
     const preset = CONFIG.difficulties[mode]
     const useHats = options.useHats ?? preset.useHats
     const mergeWindow = options.mergeWindow ?? preset.mergeWindow
-    const minGap = options.chartMinGap ?? preset.chartMinGap
+    const baseMinGap = options.chartMinGap ?? preset.chartMinGap
+    const minGapBeats = options.minGapBeats ?? preset.minGapBeats ?? 0
     const dropOffGrid = options.dropOffGrid ?? preset.dropOffGrid ?? false
     const key = this.chartKey(url, mode)
 
@@ -378,7 +392,11 @@ export const beatDetector = {
           )
 
         const kickEnv = bandEnvelope(40, 160)
-        const snareEnv = bandEnvelope(150, 500)
+        // Real snares carry body energy well above 500 Hz. A too-narrow band
+        // (150-500) under-detects them and lets mid-range guitar/vocals compete
+        // for the same slot. Widening to ~180-900 Hz catches the snare body
+        // while the 7 dB rise gate still rejects steady tones.
+        const snareEnv = bandEnvelope(180, 900)
         const hatEnv = bandEnvelope(6500, 9000)
         reportProgress(0.75, 'FINDING DRUM HITS…')
         throwIfCancelled()
@@ -506,6 +524,12 @@ export const beatDetector = {
         }
 
         const onGrid = toGrid(strong)
+
+        // Keep notes at least minGap apart. On fast, dense tracks (thrash, 16th
+        // drumming) a fixed gap still lets far too many notes through for an
+        // easy chart, so easy also spaces notes by a fraction of a beat — the
+        // gap grows with tempo instead of depending on the raw hit count.
+        const minGap = Math.max(baseMinGap, beatInterval * minGapBeats)
 
         const chart = []
         for (const hit of onGrid) {

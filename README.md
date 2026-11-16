@@ -67,10 +67,13 @@ Combo menambah pengali skor. **10 MISS** mengakhiri permainan.
   dideteksi per pita frekuensi. Note dijadwalkan pada waktu pukulan drum
   sesungguhnya, bukan pada grid BPM yang diasumsikan.
 - **Tempo & grid adaptif.** Tempo dicari langsung di rentang 60–200 BPM
-  (onset envelope + autokorelasi). Setiap hit lalu di-snap ke grid musik:
-  **8th-note** untuk lagu > 100 BPM, **quarter-note** untuk balada < 100 BPM —
-  supaya note jatuh tepat di ketukan yang terdengar. Hit yang tak bisa
-  ditempel ke grid dibuang, bukan dibiarkan melayang off-beat.
+  (onset envelope + autokorelasi). Kandidat tempo tidak dipilih dari puncak
+  autokorelasi terkuat saja, tetapi dari yang **grid-nya paling pas** dengan
+  onset drum (mean-distance ternormalisasi), lalu diperhalus dengan interpolasi
+  parabola — supaya tempo rubato/human-feel tidak salah kunci ke double/half
+  time. Setiap hit lalu di-snap ke grid musik secara **konservatif**: hanya
+  digeser bila sudah dalam ~60 ms dari tick. Hit yang jauh dari grid tidak
+  ditarik paksa ke ketukan yang tidak ada.
 - **Sinkronisasi berbasis audio clock.** Posisi note dan penilaian timing
   dihitung dari `currentTime` elemen audio, sehingga tidak pernah melenceng.
 - **Bloom neon** (EffectComposer + UnrealBloomPass) dengan exposure rendah agar
@@ -91,6 +94,25 @@ Combo menambah pengali skor. **10 MISS** mengakhiri permainan.
 - **Preset keybind** `1 2 3 4` atau `D F J K`, plus dukungan **gamepad**.
 - **Mobile-friendly**: `100dvh` + safe-area (notch/home bar), zona sentuh besar,
   dan modal yang tetap bisa di-scroll di layar landscape pendek.
+
+---
+
+## Tingkat Kesulitan
+
+Dipilih di pengaturan sebelum mulai. Keduanya memakai deteksi drum yang sama,
+tetapi menyusun chart berbeda:
+
+| | **EASY** | **HARD** |
+|---|---|---|
+| Hi-hat | tidak dipakai | dipakai |
+| Jarak minimum antar note | 260 ms, dan minimal 0.7 ketukan (lagu cepat jadi lebih renggang) | 140 ms |
+| Hit jauh dari grid | dibuang (chart rapi & jarang) | dipertahankan di posisi drum asli |
+| Kepadatan | ~50–100 note/menit | ~190–240 note/menit |
+| Rasa | mudah, note sedikit | padat, mengikuti semua pukulan drum |
+
+Pada **HARD**, note mengikuti posisi drum sebenarnya (drift ~4–10 ms), termasuk
+pukulan yang jatuh di antara ketukan. Pada **EASY**, hanya ketukan yang pas grid
+yang dipakai supaya pola mudah ditebak.
 
 ---
 
@@ -132,6 +154,7 @@ cyber-runner/
 │       ├── settingsModal.js  # Modifier/setting UI
 │       └── calibrationModal.js
 ├── scripts/
+│   ├── diagnose-mp3.mjs      # Diagnostik chart dari file MP3 langsung (Node)
 │   └── analyze-chart.mjs     # Diagnostik chart dari file WAV (Node)
 └── test/                     # Vitest (judgment, config, quantize, kalibrasi)
 ```
@@ -168,10 +191,19 @@ npm run format    # Prettier
 
 ### Debug chart
 
-`scripts/analyze-chart.mjs` menjalankan pipeline chart (band split, onset,
-tempo, snap) di Node terhadap file audio, lalu mencetak tempo terdeteksi,
-jumlah note, dan daftar note yang off-grid. Berguna saat sebuah lagu terasa
-"tidak pas". Butuh file **WAV 16-bit mono** (konversi dulu dengan ffmpeg):
+`scripts/diagnose-mp3.mjs` menjalankan pipeline chart lengkap (band split,
+onset, tempo, snap) di Node terhadap **file MP3 langsung** (dekode murni JS via
+`mpg123-decoder`), tanpa ffmpeg. Output: kandidat tempo + skor grid-fit, tempo
+terpilih, jumlah kick/snare/hat, kepadatan note, dan **drift note terhadap drum
+asli** (mean, jumlah note >50 ms / >100 ms dari pukulan drum terdekat) — metrik
+yang menunjukkan apakah note benar-benar "menempel" ke drum.
+
+```bash
+node scripts/diagnose-mp3.mjs "public/songs/lagu.mp3" easy   # atau: hard
+```
+
+Versi lama `scripts/analyze-chart.mjs` tetap ada untuk file **WAV 16-bit mono**
+(konversi dulu dengan ffmpeg):
 
 ```bash
 ffmpeg -i lagu.mp3 -ac 1 -ar 44100 lagu.wav

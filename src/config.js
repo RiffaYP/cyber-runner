@@ -97,6 +97,10 @@ export const CONFIG = {
       useHats: false,
       mergeWindow: 0.055,
       chartMinGap: 0.26,
+      // Space easy notes by at least this fraction of a beat, so fast dense
+      // tracks (thrash) don't flood the chart. Effective gap = max(chartMinGap,
+      // beat * minGapBeats).
+      minGapBeats: 0.7,
       // Easy keeps only hits that sit close to the tempo grid, so the chart
       // stays sparse and predictable for beginners.
       dropOffGrid: true,
@@ -106,6 +110,7 @@ export const CONFIG = {
       useHats: true,
       mergeWindow: 0.055,
       chartMinGap: 0.14,
+      minGapBeats: 0,
       // Hard follows every detected drum hit, even ones off the grid, so the
       // notes land where the drummer actually played.
       dropOffGrid: false,

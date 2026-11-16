@@ -3,19 +3,20 @@ CARA MENAMBAH LAGU
 
 1. Taruh file MP3 di folder ini (public/songs/).
 
-2. Buka src/main.js, cari "CONFIG.songs", lalu tambahkan satu baris:
+2. Buka src/config.js, cari "songs", lalu tambahkan satu entri:
 
-   { id: 'nama-unik', title: 'Judul Lagu', artist: 'Nama Artis', url: '/songs/nama-file.mp3' },
+   { id: 'nama-unik', title: 'Judul Lagu', artist: 'Nama Artis', url: '/cyber-runner/songs/nama-file.mp3' },
 
    Contoh:
-   { id: 'midnight', title: 'Midnight Run', artist: 'Someone', url: '/songs/midnight-run.mp3' },
+   { id: 'midnight', title: 'Midnight Run', artist: 'Someone', url: '/cyber-runner/songs/midnight-run.mp3' },
 
 3. Simpan. Lagu akan otomatis muncul di daftar (urut abjad berdasarkan title).
 
 CATATAN PENTING
 ---------------
 - id harus unik, tidak boleh sama dengan lagu lain.
-- url diawali "/songs/" dan huruf besar/kecil HARUS sama dengan nama file.
+- url diawali "/cyber-runner/songs/" dan huruf besar/kecil HARUS sama dengan
+  nama file. Spasi dan karakter khusus harus di-encode (%20, %27).
 - Taruh juga file di folder yang sama dengan nama persis seperti di `url`.
 - Format yang didukung: MP3 (paling aman), M4A, OGG, WAV.
 - Ukuran 1 lagu sebaiknya di bawah 10 MB. Semakin besar file, semakin lama

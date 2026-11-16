@@ -30,8 +30,8 @@ try {
 }
 
 const MODES = {
-  easy: { useHats: false, mergeWindow: 0.055, chartMinGap: 0.26, dropOffGrid: true },
-  hard: { useHats: true, mergeWindow: 0.055, chartMinGap: 0.14, dropOffGrid: false },
+  easy: { useHats: false, mergeWindow: 0.055, chartMinGap: 0.26, minGapBeats: 0.7, dropOffGrid: true },
+  hard: { useHats: true, mergeWindow: 0.055, chartMinGap: 0.14, minGapBeats: 0, dropOffGrid: false },
 }
 
 const [file, modeArg = 'easy'] = process.argv.slice(2)
@@ -242,7 +242,7 @@ const bandEnvelope = (loHz, hiHz) =>
   envelopeOf(applyBiquad(applyBiquad(mono, biquad('highpass', loHz)), biquad('lowpass', hiHz)))
 
 const kickEnv = bandEnvelope(40, 160)
-const snareEnv = bandEnvelope(150, 500)
+const snareEnv = bandEnvelope(180, 900)
 const hatEnv = bandEnvelope(6500, 9000)
 
 const riseLag = Math.max(1, Math.round(0.02 / hopSec))
@@ -335,10 +335,11 @@ const toGrid = (list) => {
 }
 
 const onGrid = toGrid(strong)
+const minGap = Math.max(preset.chartMinGap, beatInterval * preset.minGapBeats)
 const chart = []
 for (const hit of onGrid) {
   const last = chart[chart.length - 1]
-  if (last && hit.time - last.time < preset.chartMinGap) continue
+  if (last && hit.time - last.time < minGap) continue
   chart.push(hit)
 }
 
