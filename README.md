@@ -66,24 +66,31 @@ Combo menambah pengali skor. **10 MISS** mengakhiri permainan.
 - **Chart otomatis dari drum asli.** Lagu di-decode, lalu onset kick/snare
   dideteksi per pita frekuensi. Note dijadwalkan pada waktu pukulan drum
   sesungguhnya, bukan pada grid BPM yang diasumsikan.
+- **Tempo & grid adaptif.** Tempo dicari langsung di rentang 60–200 BPM
+  (onset envelope + autokorelasi). Setiap hit lalu di-snap ke grid musik:
+  **8th-note** untuk lagu > 100 BPM, **quarter-note** untuk balada < 100 BPM —
+  supaya note jatuh tepat di ketukan yang terdengar. Hit yang tak bisa
+  ditempel ke grid dibuang, bukan dibiarkan melayang off-beat.
 - **Sinkronisasi berbasis audio clock.** Posisi note dan penilaian timing
   dihitung dari `currentTime` elemen audio, sehingga tidak pernah melenceng.
-- **Deteksi BPM** dengan onset envelope + autokorelasi (fallback bila analisis
-  gagal).
 - **Bloom neon** (EffectComposer + UnrealBloomPass) dengan exposure rendah agar
   warna tetap natural dan tidak menjadi putih menyilaukan.
 - **Pustaka lagu**: daftar lagu dari `CONFIG.songs`, preview 15 detik, serta
   unggah MP3 sendiri (maks 30 MB, hanya untuk sesi berjalan).
 - **Pause** dengan nilai tetap sinkron: musik berhenti, chart berhenti, grid
   dibekukan, lalu menyambung tepat di posisi semula.
-- **Hit SFX sintetis.** Setiap ketukan menghasilkan suara klik/rimshot dari
-  Web Audio (nada berbeda per grade, dentuman rendah saat miss). Tidak butuh
-  file audio tambahan.
+- **Hit SFX sintetis.** Suara woodblock/rimshot dari Web Audio (dua sine
+  detuned + tick noise pendek, pitch per grade, dentuman rendah saat miss).
+  Tidak butuh file audio tambahan; `AudioContext` di-unlock pada gesture
+  pertama (penting untuk iOS).
 - **Kalibrasi latency interaktif.** Tombol **CALIBRATE** membuka wizard
-  tap-to-beat (120 BPM, 16 ketukan). Rata-rata offset dihitung otomatis dan
-  diterapkan ke timing window — penting untuk headphone Bluetooth.
+  tap-to-beat (120 BPM, 16 ketukan, 2 ketukan warmup dibuang). Rata-rata offset
+  dihitung otomatis dan diterapkan ke timing window — penting untuk headphone
+  Bluetooth.
 - **Volume terpisah** untuk SFX dan musik.
-- **Preset keybind** `1 2 3 4` atau `D F J K`.
+- **Preset keybind** `1 2 3 4` atau `D F J K`, plus dukungan **gamepad**.
+- **Mobile-friendly**: `100dvh` + safe-area (notch/home bar), zona sentuh besar,
+  dan modal yang tetap bisa di-scroll di layar landscape pendek.
 
 ---
 
@@ -109,7 +116,7 @@ cyber-runner/
 │   │   ├── id3.js            # Parser tag MP3
 │   │   └── calibration.js    # LatencyCalibrator
 │   ├── chart/
-│   │   └── beatDetector.js   # BPM, onset drum, cache chart
+│   │   └── beatDetector.js   # Deteksi tempo (60–200 BPM), onset drum, snap grid, cache
 │   ├── render/
 │   │   ├── scene.js          # Renderer, camera, bloom, resize
 │   │   ├── road.js           # Grid, rail, beam, garis hit
@@ -124,7 +131,9 @@ cyber-runner/
 │       ├── songLibrary.js    # Katalog, preview, upload
 │       ├── settingsModal.js  # Modifier/setting UI
 │       └── calibrationModal.js
-└── test/                 # Vitest (judgment, config, kalibrasi)
+├── scripts/
+│   └── analyze-chart.mjs     # Diagnostik chart dari file WAV (Node)
+└── test/                     # Vitest (judgment, config, quantize, kalibrasi)
 ```
 
 ### Menambah Lagu
@@ -155,6 +164,18 @@ npm run preview   # cek hasil build
 npm run test      # jalankan Vitest
 npm run lint      # ESLint
 npm run format    # Prettier
+```
+
+### Debug chart
+
+`scripts/analyze-chart.mjs` menjalankan pipeline chart (band split, onset,
+tempo, snap) di Node terhadap file audio, lalu mencetak tempo terdeteksi,
+jumlah note, dan daftar note yang off-grid. Berguna saat sebuah lagu terasa
+"tidak pas". Butuh file **WAV 16-bit mono** (konversi dulu dengan ffmpeg):
+
+```bash
+ffmpeg -i lagu.mp3 -ac 1 -ar 44100 lagu.wav
+node scripts/analyze-chart.mjs lagu.wav easy   # atau: hard
 ```
 
 ---

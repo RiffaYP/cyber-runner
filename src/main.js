@@ -1,7 +1,7 @@
 import './style.css'
 
 import * as THREE from 'three'
-import { isMobile, prefersLandscape } from './device.js'
+import { isMobile } from './device.js'
 import { initTouch } from './touch.js'
 import { unlockSfx } from './audio/sfx.js'
 import { CONFIG, mirrorLane, activeNoteSpeed } from './config.js'
@@ -359,6 +359,8 @@ function init() {
   if (saved?.difficulty) {
     game.difficulty = beatDetector.resolveMode(saved.difficulty)
   }
+  // Restore saved high scores so the game-over screen shows previous records.
+  highScores.load()
 
   initSettingsUI(game, songLibrary, beatDetector, prefetchSelectedSong)
   updateKeyLabels()
