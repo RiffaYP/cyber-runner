@@ -177,23 +177,24 @@ export const beatDetector = {
     /*
      * Tempo search, done INSIDE the gameplay range.
      *
-     * The old code searched 0.20-1.50 s with a `lag^0.25` bonus and then folded
-     * the result into 80-170 BPM. On ballads that folded the TRUE tempo away
-     * and locked onto the double-time peak: "So Far Away" (~76 BPM, beat 0.79 s)
-     * was read as 151.9 BPM, so the 8th-note snap grid sat between the beats the
-     * player actually hears and notes felt off.
+     * Autocorrelation of the onset envelope gives the periodicity of the
+     * pulse; picking the SINGLE strongest peak is not enough, though. On a
+     * track whose drums are not strictly metronomic (rubato, live feel, guitar
+     * and vocal transients leaking into the onset envelope) the true tempo's
+     * peak can be weaker than a harmonic (double/half time), and the chart then
+     * snaps away from the drums the player actually hears.
      *
-     * Searching 60-200 BPM directly (0.30-1.00 s) and taking the strongest peak
-     * recovers the real tempo on every bundled track without any folding:
-     *   So Far Away  -> 75.9 BPM
-     *   Oasis        -> 166.7 BPM
-     *   Metallica    -> 103.4 BPM
+     * So we collect EVERY autocorrelation peak as a candidate (60-200 BPM),
+     * refine each with parabolic interpolation, and choose the one whose grid
+     * best fits the detected onsets (grid-fit score). Grid-fit directly measures
+     * "do the beats of the song land on this tempo's grid", which is exactly
+     * what the chart needs, instead of guessing from peak height alone.
      */
     const BPM_MIN = 60
     const BPM_MAX = 200
     const MIN_LAG = Math.round(60 / BPM_MAX / 0.01) // 30 frames = 0.30 s
     const MAX_LAG = Math.round(60 / BPM_MIN / 0.01) // 100 frames = 1.00 s
-    const autocorr = new Float64Array(MAX_LAG + 1)
+    const autocorr = new Float64Array(MAX_LAG + 2)
 
     for (let lag = MIN_LAG; lag <= MAX_LAG; lag++) {
       let sum = 0
@@ -201,22 +202,15 @@ export const beatDetector = {
       autocorr[lag] = sum / (frames - lag)
     }
 
-    let bestLag = MIN_LAG
-    let bestScore = -Infinity
-
-    for (let lag = MIN_LAG + 1; lag < MAX_LAG; lag++) {
-      const isPeak = autocorr[lag] > autocorr[lag - 1] && autocorr[lag] >= autocorr[lag + 1]
-      if (!isPeak || autocorr[lag] <= 0) continue
-      if (autocorr[lag] > bestScore) {
-        bestScore = autocorr[lag]
-        bestLag = lag
-      }
+    // Sub-frame peak position for a smoother period estimate.
+    const parabolicLag = (lag) => {
+      const y0 = autocorr[lag - 1]
+      const y1 = autocorr[lag]
+      const y2 = autocorr[lag + 1]
+      const denom = y0 - 2 * y1 + y2
+      const delta = denom === 0 ? 0 : (0.5 * (y0 - y2)) / denom
+      return lag + Math.max(-0.5, Math.min(0.5, delta))
     }
-
-    // No folding: the search already covers the playable range.
-    const beatInterval = bestLag * 0.01
-
-    const bpm = 60 / beatInterval
 
     let onsetPeak = 0
     for (let i = 1; i < frames; i++) {
@@ -229,23 +223,68 @@ export const beatDetector = {
       if (onset[i] >= onsetThreshold) onsets.push(i * 0.01)
     }
 
-    let bestOffset = 0
-    let bestHits = -1
-    const tolerance = Math.min(0.05, beatInterval * 0.12)
+    // Best phase + fraction of onsets that land on the grid for a given period.
+    // A FIXED tolerance (not scaled by period) so candidate tempos are compared
+    // on equal footing: what matters is how tightly the song's onsets cluster
+    // around each grid, not how wide a coarse grid can afford to be.
+    const fitGrid = (beatInterval) => {
+      const tolerance = 0.05
+      let bestOffset = 0
+      let bestHits = -1
+      for (let offset = 0; offset < beatInterval; offset += 0.005) {
+        let hits = 0
+        for (const time of onsets) {
+          const phase = (((time - offset) % beatInterval) + beatInterval) % beatInterval
+          if (Math.min(phase, beatInterval - phase) < tolerance) hits++
+        }
+        if (hits > bestHits) {
+          bestHits = hits
+          bestOffset = offset
+        }
+      }
+      return { offset: bestOffset, hits: Math.max(0, bestHits) }
+    }
 
-    for (let offset = 0; offset < beatInterval; offset += 0.005) {
-      let hits = 0
+    const candidates = []
+    for (let lag = MIN_LAG + 1; lag < MAX_LAG; lag++) {
+      const isPeak = autocorr[lag] > autocorr[lag - 1] && autocorr[lag] >= autocorr[lag + 1]
+      if (!isPeak || autocorr[lag] <= 0) continue
+      candidates.push({ lag: parabolicLag(lag), score: autocorr[lag] })
+    }
+    if (candidates.length === 0) candidates.push({ lag: MIN_LAG, score: 0 })
+
+    // Pick the tempo whose grid the onsets cluster on most tightly. Grid-fit is
+    // measured as the mean distance from each onset to its nearest grid tick,
+    // NORMALISED by the tick spacing so a dense grid (many close ticks) cannot
+    // win just by having more slots to catch onsets. A small autocorrelation
+    // term breaks ties between grids that fit equally.
+    const meanGridDistance = (beatInterval, offset) => {
+      let sum = 0
       for (const time of onsets) {
         const phase = (((time - offset) % beatInterval) + beatInterval) % beatInterval
-        if (Math.min(phase, beatInterval - phase) < tolerance) hits++
+        sum += Math.min(phase, beatInterval - phase)
       }
-      if (hits > bestHits) {
-        bestHits = hits
-        bestOffset = offset
+      return sum / onsets.length
+    }
+
+    let best = null
+    const maxScore = candidates.reduce((m, c) => Math.max(m, c.score), 0) || 1
+    for (const candidate of candidates) {
+      const beatInterval = candidate.lag * 0.01
+      const { offset } = fitGrid(beatInterval)
+      const meanDist = meanGridDistance(beatInterval, offset)
+      // Lower mean distance = better fit. Normalise to 0..1 (1 = perfect).
+      const fitQuality = Math.max(0, 1 - meanDist / (beatInterval * 0.5))
+      const strength = fitQuality + 0.05 * (candidate.score / maxScore)
+      if (!best || strength > best.strength) {
+        best = { beatInterval, offset, strength }
       }
     }
 
-    return { bpm, beatInterval, offset: bestOffset, onsets: onsets.length }
+    const beatInterval = best.beatInterval
+    const bpm = 60 / beatInterval
+
+    return { bpm, beatInterval, offset: best.offset, onsets: onsets.length }
   },
 
   async buildChart(url, options = {}) {
@@ -254,6 +293,7 @@ export const beatDetector = {
     const useHats = options.useHats ?? preset.useHats
     const mergeWindow = options.mergeWindow ?? preset.mergeWindow
     const minGap = options.chartMinGap ?? preset.chartMinGap
+    const dropOffGrid = options.dropOffGrid ?? preset.dropOffGrid ?? false
     const key = this.chartKey(url, mode)
 
     if (this.chartCache.has(key)) return this.chartCache.get(key)
@@ -411,35 +451,38 @@ export const beatDetector = {
           merged.push({ ...hit })
         }
 
+        // --- Drop weak hits, then snap conservatively ----------------------
+        // Real drum hits vary in level; quiet transients in the band (guitar
+        // attacks, vocal consonants) slip past the onset detector as weak
+        // "hits". Keeping only hits with some weight trims that noise without
+        // losing the actual drumming, which is the loudest energy in each band.
+        const maxStrength = hits.reduce((max, h) => Math.max(max, h.strength), 0)
+        const weakFloor = maxStrength * 0.12
+        const strong = merged.filter((h) => h.strength >= weakFloor)
+
         // --- Snap each hit to the nearest beat subdivision -----------------
-        // Free-floating onset times feel random: the player hears "click" but
-        // cannot predict WHERE the next note lands. Snapping to a musical grid
-        // keeps every note on a beat the ear can count while still following
-        // the real drum moments. Snaps only apply within a small tolerance — a
-        // genuinely off-grid hit is left alone.
+        // Snapping keeps notes predictable and playable by ear, but a note
+        // forced onto a grid slot that sits far from the real drum no longer
+        // matches what the player hears — that is the "note does not follow the
+        // drum" complaint. On tracks whose drums are not strictly metronomic
+        // the true hits drift off any fixed grid, so snapping them is wrong.
         //
-        // Grid density adapts to tempo. Fast tracks get an 8th-note grid, which
-        // still divides down to a musically sensible beat. Slow ballads (below
-        // ~100 BPM) get a quarter-note (one-beat) grid: an 8th grid there is
-        // half a beat apart, and that sub-beat lives between the pulses the
-        // player actually feels — exactly what made "So Far Away" (76 BPM) feel
-        // like the notes did not match the drumming.
+        // Fix: snap only when the hit is already CLOSE to a grid slot (small
+        // tolerance). A hit that is genuinely off-grid either keeps its real
+        // drum time (hard: follow the drummer) or is dropped (easy: stay sparse
+        // and predictable for beginners), per the difficulty preset.
         const tempo = await this.getTempo(url)
         const beatInterval = tempo.beatInterval
         const beatOffset = tempo.offset
         const isSlow = 60 / beatInterval < 100
         const snapGrid = isSlow ? beatInterval : beatInterval / 2
-        const snapTolerance = snapGrid * 0.42
+        const snapTolerance = Math.min(snapGrid * 0.2, 0.06) // conservative, capped
 
-        // A hit that cannot be placed on the grid is DROPPED rather than kept
-        // off-grid. Off-grid notes are the ones that feel wrong: the drum is
-        // real, but it sits between the pulses the player counts against, so
-        // striking "on the beat" misses it. Losing a handful of sub-beat
-        // ghost notes is better than keeping notes that cannot be played by ear.
         const quantize = (time) => {
           const rel = time - beatOffset
           const snapped = beatOffset + Math.round(rel / snapGrid) * snapGrid
-          return Math.abs(snapped - time) <= snapTolerance ? snapped : null
+          if (Math.abs(snapped - time) <= snapTolerance) return snapped
+          return dropOffGrid ? null : time
         }
 
         const toGrid = (list) => {
@@ -448,7 +491,7 @@ export const beatDetector = {
             const snapped = quantize(hit.time)
             if (snapped === null) continue
             const last = out[out.length - 1]
-            // After snapping, two hits may collapse onto the same grid slot.
+            // Two hits may collapse onto the same slot after snapping.
             if (last && snapped - last.time < mergeWindow) {
               if (hit.strength > last.strength) {
                 last.time = snapped
@@ -462,7 +505,7 @@ export const beatDetector = {
           return out
         }
 
-        const onGrid = toGrid(merged)
+        const onGrid = toGrid(strong)
 
         const chart = []
         for (const hit of onGrid) {

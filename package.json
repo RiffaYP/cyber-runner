@@ -14,6 +14,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.15.0",
+    "mpg123-decoder": "^1.0.3",
     "prettier": "^3.10.1",
     "vite": "^8.3.5",
     "vitest": "^5.1.0"

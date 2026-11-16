@@ -97,12 +97,18 @@ export const CONFIG = {
       useHats: false,
       mergeWindow: 0.055,
       chartMinGap: 0.26,
+      // Easy keeps only hits that sit close to the tempo grid, so the chart
+      // stays sparse and predictable for beginners.
+      dropOffGrid: true,
     },
     hard: {
       label: 'HARD',
       useHats: true,
       mergeWindow: 0.055,
       chartMinGap: 0.14,
+      // Hard follows every detected drum hit, even ones off the grid, so the
+      // notes land where the drummer actually played.
+      dropOffGrid: false,
     },
   },
   defaultDifficulty: 'easy',
